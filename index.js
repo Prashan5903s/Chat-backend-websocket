@@ -777,10 +777,10 @@ wss.on('connection', (ws, req) => {
 app.use(express.json())
 
 app.post('/broadcast-duty-status', (req, res) => {
+  
   try {
-    const data = req.body
 
-    console.log('Duty status change received:', data)
+    const data = req.body
 
     const driverId = Number(data.driverId)
 
