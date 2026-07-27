@@ -778,10 +778,7 @@ app.use(express.json())
 
 app.post('/broadcast-duty-status', (req, res) => {
   try {
-
     const data = req.body
-
-    
 
     const driverId = Number(data.driverId)
 
@@ -797,8 +794,9 @@ app.post('/broadcast-duty-status', (req, res) => {
         client.send(
           JSON.stringify({
             sendType: 'change-duty-status',
-            driverId: data.driverId,
-            vehicleId: data.vehicleId,
+            driverId,
+            driver: data.driver,
+            vehicle: data.vehicle,
             shiftStatus: data.shiftStatus,
             startLogTime: data.startLogTime,
             endLogTime: data.endLogTime,
