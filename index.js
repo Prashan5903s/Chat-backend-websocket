@@ -49,18 +49,18 @@ wss.on('connection', (ws, req) => {
 
         // Fetch past messages
         const query = `
-                    SELECT um.*, 
-                           u1.first_name AS sender_first_name, u1.last_name AS sender_last_name, 
-                           u2.first_name AS reciever_first_name, u2.last_name AS reciever_last_name
-                    FROM user_message um
-                    LEFT JOIN users u1 ON um.sender_id = u1.id
-                    LEFT JOIN users u2 ON um.reciever_id = u2.id
-                    WHERE ((um.reciever_id = ? AND um.sender_id = ?) 
-                        OR (um.group_id = ?)
-                        OR (um.reciever_id = ? AND um.sender_id = ?))
-                    AND um.type = ? 
-                    ORDER BY um.sent_time ASC
-                `
+                        SELECT um.*, 
+                              u1.first_name AS sender_first_name, u1.last_name AS sender_last_name, 
+                              u2.first_name AS reciever_first_name, u2.last_name AS reciever_last_name
+                        FROM user_message um
+                        LEFT JOIN users u1 ON um.sender_id = u1.id
+                        LEFT JOIN users u2 ON um.reciever_id = u2.id
+                        WHERE ((um.reciever_id = ? AND um.sender_id = ?) 
+                            OR (um.group_id = ?)
+                            OR (um.reciever_id = ? AND um.sender_id = ?))
+                        AND um.type = ? 
+                        ORDER BY um.sent_time ASC
+                    `
 
         db.query(
           query,
@@ -112,61 +112,61 @@ wss.on('connection', (ws, req) => {
 
         // Query for users
         const userQuery = `
-                    SELECT * FROM users 
-                    WHERE master_id = ? 
-                    ORDER BY created_at ASC;
-                `
-
-        const driverQuery = `
                         SELECT * FROM users 
                         WHERE master_id = ? 
-                        AND NOT id = ?
                         ORDER BY created_at ASC;
                     `
 
+        const driverQuery = `
+                            SELECT * FROM users 
+                            WHERE master_id = ? 
+                            AND NOT id = ?
+                            ORDER BY created_at ASC;
+                        `
+
         const masterQuery = `
-                    SELECT * FROM users
-                    WHERE id = ?
-                    AND user_type = 'TR'
-                    ORDER BY created_at ASC;
-                `
+                        SELECT * FROM users
+                        WHERE id = ?
+                        AND user_type = 'TR'
+                        ORDER BY created_at ASC;
+                    `
 
         // Query for groups created by the user
         const groupQuery = `
-                    SELECT 
-                        g.group_id, 
-                        g.group_name, 
-                        g.created_by, 
-                        g.created_at,
-                        ug.user_id AS user_group_user_id,   -- From user_group (may be NULL)
-                        u.first_name AS user_first_name,    -- From users (may be NULL)
-                        u.last_name AS user_last_name
-                    FROM 
-                        groups g
-                    LEFT JOIN 
-                        user_group ug ON g.group_id = ug.group_id  -- Include groups even if no user_group entry exists
-                    LEFT JOIN 
-                        users u ON ug.user_id = u.id              -- Include user details if available
-                    WHERE 
-                        g.created_by = ?
-                    ORDER BY 
-                        g.group_id DESC;
-                `
+                        SELECT 
+                            g.group_id, 
+                            g.group_name, 
+                            g.created_by, 
+                            g.created_at,
+                            ug.user_id AS user_group_user_id,   -- From user_group (may be NULL)
+                            u.first_name AS user_first_name,    -- From users (may be NULL)
+                            u.last_name AS user_last_name
+                        FROM 
+                            groups g
+                        LEFT JOIN 
+                            user_group ug ON g.group_id = ug.group_id  -- Include groups even if no user_group entry exists
+                        LEFT JOIN 
+                            users u ON ug.user_id = u.id              -- Include user details if available
+                        WHERE 
+                            g.created_by = ?
+                        ORDER BY 
+                            g.group_id DESC;
+                    `
 
         // Query for the user's groups (user_group relationship)
         const userGroupQuery = `
-                    SELECT 
-                        ug.*, 
-                        g.*
-                    FROM 
-                        user_group ug
-                    JOIN 
-                        groups g ON ug.group_id = g.group_id
-                    WHERE 
-                        ug.user_id = ?
-                    ORDER BY
-                     ug.id ASC
-                `
+                        SELECT 
+                            ug.*, 
+                            g.*
+                        FROM 
+                            user_group ug
+                        JOIN 
+                            groups g ON ug.group_id = g.group_id
+                        WHERE 
+                            ug.user_id = ?
+                        ORDER BY
+                        ug.id ASC
+                    `
 
         // Fetch users
         db.query(userQuery, [data.senderId], (err, userResults) => {
@@ -324,9 +324,9 @@ wss.on('connection', (ws, req) => {
 
         // Insert the new group into the 'groups' table
         const query = `
-                    INSERT INTO groups (group_name, master_id, master_company_id, created_by, is_active)
-                    VALUES (?, ?, ?, ?, ?)
-                `
+                        INSERT INTO groups (group_name, master_id, master_company_id, created_by, is_active)
+                        VALUES (?, ?, ?, ?, ?)
+                    `
 
         // Save the group into the 'groups' table
         db.query(
@@ -348,9 +348,9 @@ wss.on('connection', (ws, req) => {
 
             // Insert the association between users and the newly created group into the 'user_group' table
             const groupCreateQuery = `
-                        INSERT INTO user_group (group_id, user_id, is_active)
-                        VALUES (?, ?, ?)
-                    `
+                            INSERT INTO user_group (group_id, user_id, is_active)
+                            VALUES (?, ?, ?)
+                        `
 
             // Loop through the user_id array and insert each user into the 'user_group' table
             data.userSelected.forEach(userId => {
@@ -392,9 +392,9 @@ wss.on('connection', (ws, req) => {
         if (data.type) {
           // Save the message
           const query = `
-                        INSERT INTO user_message (type, sender_id, group_id, image_url, message_text, master_id, master_company_id, created_by, sent_time)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    `
+                            INSERT INTO user_message (type, sender_id, group_id, image_url, message_text, master_id, master_company_id, created_by, sent_time)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        `
 
           db.query(
             query,
@@ -417,10 +417,10 @@ wss.on('connection', (ws, req) => {
 
               // Query to get the sender's name
               const senderQuery = `
-                                SELECT first_name, last_name
-                                FROM users
-                                WHERE id = ?
-                            `
+                                    SELECT first_name, last_name
+                                    FROM users
+                                    WHERE id = ?
+                                `
 
               db.query(senderQuery, [data.sender_id], (err, senderResult) => {
                 if (err) {
@@ -456,9 +456,9 @@ wss.on('connection', (ws, req) => {
           )
         } else {
           const query = `
-                        INSERT INTO user_message (type, sender_id, reciever_id, image_url, message_text, master_id, master_company_id, created_by, sent_time)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    `
+                            INSERT INTO user_message (type, sender_id, reciever_id, image_url, message_text, master_id, master_company_id, created_by, sent_time)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        `
 
           db.query(
             query,
@@ -481,13 +481,13 @@ wss.on('connection', (ws, req) => {
 
               // Query to get sender and receiver names
               const senderReceiverQuery = `
-                            SELECT 
-                                u1.first_name AS sender_first_name, u1.last_name AS sender_last_name, 
-                                u2.first_name AS reciever_first_name, u2.last_name AS reciever_last_name
-                            FROM users u1
-                            LEFT JOIN users u2 ON u2.id = ? 
-                            WHERE u1.id = ?
-                        `
+                                SELECT 
+                                    u1.first_name AS sender_first_name, u1.last_name AS sender_last_name, 
+                                    u2.first_name AS reciever_first_name, u2.last_name AS reciever_last_name
+                                FROM users u1
+                                LEFT JOIN users u2 ON u2.id = ? 
+                                WHERE u1.id = ?
+                            `
 
               db.query(
                 senderReceiverQuery,
@@ -537,14 +537,14 @@ wss.on('connection', (ws, req) => {
 
         // Fetch past messages with is_read = 0
         const query = `
-                    SELECT * FROM user_message 
-                    WHERE (
-                        (reciever_id = ? AND reciever_id != 0 AND is_read = 0) 
-                        OR 
-                        (reciever_id = 0)
-                    )   
-                    ORDER BY sent_time DESC
-                `
+                        SELECT * FROM user_message 
+                        WHERE (
+                            (reciever_id = ? AND reciever_id != 0 AND is_read = 0) 
+                            OR 
+                            (reciever_id = 0)
+                        )   
+                        ORDER BY sent_time DESC
+                    `
 
         db.query(query, [data.receiverId], (err, results) => {
           if (err) {
@@ -554,12 +554,12 @@ wss.on('connection', (ws, req) => {
 
           // Query to get sender and receiver names
           const senderReceiverQuery = `
-                            SELECT 
-                                u1.first_name AS sender_first_name, u1.last_name AS sender_last_name, 
-                                u2.first_name AS reciever_first_name, u2.last_name AS reciever_last_name
-                            FROM users u1
-                            LEFT JOIN users u2 ON u1.id = ? AND u2.id = ?
-                        `
+                                SELECT 
+                                    u1.first_name AS sender_first_name, u1.last_name AS sender_last_name, 
+                                    u2.first_name AS reciever_first_name, u2.last_name AS reciever_last_name
+                                FROM users u1
+                                LEFT JOIN users u2 ON u1.id = ? AND u2.id = ?
+                            `
 
           results.forEach(msg => {
             db.query(
@@ -615,31 +615,31 @@ wss.on('connection', (ws, req) => {
       } else if (data.sendType === 'update_read_status') {
         // Query to update `is_read` status
         const updateQuery = `
-                    UPDATE user_message
-                    SET is_read = 1
-                    WHERE (
-                        (group_id = 0 AND reciever_id = ? AND sender_id = ?) 
-                        OR 
-                        (reciever_id = 0 AND sender_id = ? AND group_id = ?)
-                    )
-                `
+                        UPDATE user_message
+                        SET is_read = 1
+                        WHERE (
+                            (group_id = 0 AND reciever_id = ? AND sender_id = ?) 
+                            OR 
+                            (reciever_id = 0 AND sender_id = ? AND group_id = ?)
+                        )
+                    `
 
         if (data.isGroup) {
           if (data.useType) {
             // [data.recieverId, data.recieverId, data.recieverId, data.recieverId, data.senderId],
 
             const groupUpdateQuery = `
-                        UPDATE user_message
-                        SET is_read = CASE
-                                        WHEN is_read = '0' THEN ?
-                                        WHEN FIND_IN_SET(?, is_read) = 0 THEN CONCAT(is_read, ',', ?)
-                                        ELSE is_read
-                                      END
-                        WHERE  
-                            reciever_id = 0 
-                            AND sender_id != ? 
-                            AND group_id = ?;
-                    `
+                            UPDATE user_message
+                            SET is_read = CASE
+                                            WHEN is_read = '0' THEN ?
+                                            WHEN FIND_IN_SET(?, is_read) = 0 THEN CONCAT(is_read, ',', ?)
+                                            ELSE is_read
+                                          END
+                            WHERE  
+                                reciever_id = 0 
+                                AND sender_id != ? 
+                                AND group_id = ?;
+                        `
 
             db.query(
               groupUpdateQuery,
@@ -680,17 +680,17 @@ wss.on('connection', (ws, req) => {
             )
           } else {
             const groupUpdateQuery = `
-                        UPDATE user_message
-                        SET is_read = CASE
-                                        WHEN is_read = '0' THEN ?
-                                        WHEN FIND_IN_SET(?, is_read) = 0 THEN CONCAT(is_read, ',', ?)
-                                        ELSE is_read
-                                      END
-                        WHERE  
-                            reciever_id = 0 
-                            AND sender_id != ? 
-                            AND group_id = ?;
-                    `
+                            UPDATE user_message
+                            SET is_read = CASE
+                                            WHEN is_read = '0' THEN ?
+                                            WHEN FIND_IN_SET(?, is_read) = 0 THEN CONCAT(is_read, ',', ?)
+                                            ELSE is_read
+                                          END
+                            WHERE  
+                                reciever_id = 0 
+                                AND sender_id != ? 
+                                AND group_id = ?;
+                        `
 
             db.query(
               groupUpdateQuery,
@@ -800,6 +800,7 @@ app.post('/broadcast-duty-status', (req, res) => {
             shiftStatus: data.shiftStatus,
             startLogTime: data.startLogTime,
             endLogTime: data.endLogTime,
+            duration: data.duration,
             locationName: data.locationName,
             odometer: data.odometer,
             engineHours: data.engineHours
