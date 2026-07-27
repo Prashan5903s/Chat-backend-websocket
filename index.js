@@ -805,7 +805,7 @@ app.post('/broadcast-duty-status', (req, res) => {
             shift_time: data.shift_time,
             cycle_time: data.cycle_time,
             break_time: data.break_time,
-            drive_left: data.drive_left,
+            drive_time: data.drive_time,
             odometer: data.odometer,
             engineHours: data.engineHours
           })
