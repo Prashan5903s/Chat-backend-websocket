@@ -778,9 +778,10 @@ app.use(express.json())
 
 app.post('/broadcast-duty-status', (req, res) => {
   try {
+
     const data = req.body
 
-    console.log('Duty status change received:', data)
+    
 
     const driverId = Number(data.driverId)
 
