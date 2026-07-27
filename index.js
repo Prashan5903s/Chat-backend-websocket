@@ -791,6 +791,7 @@ app.post('/broadcast-duty-status', (req, res) => {
         client.readyState === WebSocket.OPEN &&
         Number(client.userId) === driverId
       ) {
+        
         client.send(
           JSON.stringify({
             sendType: 'change-duty-status',
