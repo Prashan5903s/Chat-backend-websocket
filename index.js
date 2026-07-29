@@ -11,7 +11,7 @@ const { format, utcToZonedTime } = require('date-fns-tz')
 
 const app = express()
 
-const PORT = process.env.PORT || 3001
+const PORT = 3001
 
 // ==========================================
 // Express Middleware
