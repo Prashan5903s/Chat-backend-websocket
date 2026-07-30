@@ -11,7 +11,7 @@ const { format, utcToZonedTime } = require('date-fns-tz')
 
 const app = express()
 
-const PORT = 3001
+const PORT = process.env.PORT
 
 // ==========================================
 // Express Middleware
@@ -122,6 +122,28 @@ function sendToUser (userId, data) {
   return sent
 }
 
+function sendForceLogOut (userId, data) {
+  const targetUserId = Number(userId)
+
+  let sent = false
+
+  wss.clients.forEach(client => {
+    try {
+      if (
+        client.readyState === WebSocket.OPEN &&
+        Number(client.userId) === targetUserId
+      ) {
+        client.send(JSON.stringify(data))
+        sent = true
+      }
+    } catch (error) {
+      console.error('Send to user error:', error)
+    }
+  })
+
+  return sent
+}
+
 // ==========================================
 // WebSocket Connection
 // ==========================================
@@ -200,28 +222,28 @@ wss.on('connection', (ws, req) => {
         const isGroup = data.isGroup ? 1 : 0
 
         const query = `
-          SELECT
-            um.*,
-            u1.first_name AS sender_first_name,
-            u1.last_name AS sender_last_name,
-            u2.first_name AS reciever_first_name,
-            u2.last_name AS reciever_last_name
-          FROM user_message um
-          LEFT JOIN users u1
-            ON um.sender_id = u1.id
-          LEFT JOIN users u2
-            ON um.reciever_id = u2.id
-          WHERE
-            (
-              (um.reciever_id = ? AND um.sender_id = ?)
-              OR
-              (um.group_id = ?)
-              OR
-              (um.reciever_id = ? AND um.sender_id = ?)
-            )
-            AND um.type = ?
-          ORDER BY um.sent_time ASC
-        `
+            SELECT
+              um.*,
+              u1.first_name AS sender_first_name,
+              u1.last_name AS sender_last_name,
+              u2.first_name AS reciever_first_name,
+              u2.last_name AS reciever_last_name
+            FROM user_message um
+            LEFT JOIN users u1
+              ON um.sender_id = u1.id
+            LEFT JOIN users u2
+              ON um.reciever_id = u2.id
+            WHERE
+              (
+                (um.reciever_id = ? AND um.sender_id = ?)
+                OR
+                (um.group_id = ?)
+                OR
+                (um.reciever_id = ? AND um.sender_id = ?)
+              )
+              AND um.type = ?
+            ORDER BY um.sent_time ASC
+          `
 
         db.query(
           query,
@@ -279,56 +301,56 @@ wss.on('connection', (ws, req) => {
         ws.userId = data.senderId
 
         const userQuery = `
-          SELECT *
-          FROM users
-          WHERE master_id = ?
-          ORDER BY created_at ASC
-        `
+            SELECT *
+            FROM users
+            WHERE master_id = ?
+            ORDER BY created_at ASC
+          `
 
         const driverQuery = `
-          SELECT *
-          FROM users
-          WHERE master_id = ?
-          AND id != ?
-          ORDER BY created_at ASC
-        `
+            SELECT *
+            FROM users
+            WHERE master_id = ?
+            AND id != ?
+            ORDER BY created_at ASC
+          `
 
         const masterQuery = `
-          SELECT *
-          FROM users
-          WHERE id = ?
-          AND user_type = 'TR'
-          ORDER BY created_at ASC
-        `
+            SELECT *
+            FROM users
+            WHERE id = ?
+            AND user_type = 'TR'
+            ORDER BY created_at ASC
+          `
 
         const groupQuery = `
-          SELECT
-            g.group_id,
-            g.group_name,
-            g.created_by,
-            g.created_at,
-            ug.user_id AS user_group_user_id,
-            u.first_name AS user_first_name,
-            u.last_name AS user_last_name
-          FROM groups g
-          LEFT JOIN user_group ug
-            ON g.group_id = ug.group_id
-          LEFT JOIN users u
-            ON ug.user_id = u.id
-          WHERE g.created_by = ?
-          ORDER BY g.group_id DESC
-        `
+            SELECT
+              g.group_id,
+              g.group_name,
+              g.created_by,
+              g.created_at,
+              ug.user_id AS user_group_user_id,
+              u.first_name AS user_first_name,
+              u.last_name AS user_last_name
+            FROM groups g
+            LEFT JOIN user_group ug
+              ON g.group_id = ug.group_id
+            LEFT JOIN users u
+              ON ug.user_id = u.id
+            WHERE g.created_by = ?
+            ORDER BY g.group_id DESC
+          `
 
         const userGroupQuery = `
-          SELECT
-            ug.*,
-            g.*
-          FROM user_group ug
-          JOIN groups g
-            ON ug.group_id = g.group_id
-          WHERE ug.user_id = ?
-          ORDER BY ug.id ASC
-        `
+            SELECT
+              ug.*,
+              g.*
+            FROM user_group ug
+            JOIN groups g
+              ON ug.group_id = g.group_id
+            WHERE ug.user_id = ?
+            ORDER BY ug.id ASC
+          `
 
         // Fetch users
         db.query(userQuery, [data.senderId], (err, userResults) => {
@@ -496,16 +518,16 @@ wss.on('connection', (ws, req) => {
         ws.userId = data.senderId
 
         const query = `
-          INSERT INTO groups
-          (
-            group_name,
-            master_id,
-            master_company_id,
-            created_by,
-            is_active
-          )
-          VALUES (?, ?, ?, ?, ?)
-        `
+            INSERT INTO groups
+            (
+              group_name,
+              master_id,
+              master_company_id,
+              created_by,
+              is_active
+            )
+            VALUES (?, ?, ?, ?, ?)
+          `
 
         db.query(
           query,
@@ -519,14 +541,14 @@ wss.on('connection', (ws, req) => {
             const groupId = result.insertId
 
             const groupCreateQuery = `
-              INSERT INTO user_group
-              (
-                group_id,
-                user_id,
-                is_active
-              )
-              VALUES (?, ?, ?)
-            `
+                INSERT INTO user_group
+                (
+                  group_id,
+                  user_id,
+                  is_active
+                )
+                VALUES (?, ?, ?)
+              `
 
             const selectedUsers = Array.isArray(data.userSelected)
               ? data.userSelected
@@ -566,20 +588,20 @@ wss.on('connection', (ws, req) => {
         if (data.type) {
           // Group message
           const query = `
-            INSERT INTO user_message
-            (
-              type,
-              sender_id,
-              group_id,
-              image_url,
-              message_text,
-              master_id,
-              master_company_id,
-              created_by,
-              sent_time
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `
+              INSERT INTO user_message
+              (
+                type,
+                sender_id,
+                group_id,
+                image_url,
+                message_text,
+                master_id,
+                master_company_id,
+                created_by,
+                sent_time
+              )
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `
 
           db.query(
             query,
@@ -601,12 +623,12 @@ wss.on('connection', (ws, req) => {
               }
 
               const senderQuery = `
-                SELECT
-                  first_name,
-                  last_name
-                FROM users
-                WHERE id = ?
-              `
+                  SELECT
+                    first_name,
+                    last_name
+                  FROM users
+                  WHERE id = ?
+                `
 
               db.query(senderQuery, [data.sender_id], (err, senderResult) => {
                 if (err) {
@@ -638,20 +660,20 @@ wss.on('connection', (ws, req) => {
         } else {
           // One-to-one message
           const query = `
-            INSERT INTO user_message
-            (
-              type,
-              sender_id,
-              reciever_id,
-              image_url,
-              message_text,
-              master_id,
-              master_company_id,
-              created_by,
-              sent_time
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `
+              INSERT INTO user_message
+              (
+                type,
+                sender_id,
+                reciever_id,
+                image_url,
+                message_text,
+                master_id,
+                master_company_id,
+                created_by,
+                sent_time
+              )
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `
 
           db.query(
             query,
@@ -673,16 +695,16 @@ wss.on('connection', (ws, req) => {
               }
 
               const senderReceiverQuery = `
-                SELECT
-                  u1.first_name AS sender_first_name,
-                  u1.last_name AS sender_last_name,
-                  u2.first_name AS reciever_first_name,
-                  u2.last_name AS reciever_last_name
-                FROM users u1
-                LEFT JOIN users u2
-                  ON u2.id = ?
-                WHERE u1.id = ?
-              `
+                  SELECT
+                    u1.first_name AS sender_first_name,
+                    u1.last_name AS sender_last_name,
+                    u2.first_name AS reciever_first_name,
+                    u2.last_name AS reciever_last_name
+                  FROM users u1
+                  LEFT JOIN users u2
+                    ON u2.id = ?
+                  WHERE u1.id = ?
+                `
 
               db.query(
                 senderReceiverQuery,
@@ -735,20 +757,20 @@ wss.on('connection', (ws, req) => {
         ws.userId = data.senderId
 
         const query = `
-          SELECT *
-          FROM user_message
-          WHERE
-            (
+            SELECT *
+            FROM user_message
+            WHERE
               (
-                reciever_id = ?
-                AND reciever_id != 0
-                AND is_read = 0
+                (
+                  reciever_id = ?
+                  AND reciever_id != 0
+                  AND is_read = 0
+                )
+                OR
+                (reciever_id = 0)
               )
-              OR
-              (reciever_id = 0)
-            )
-          ORDER BY sent_time DESC
-        `
+            ORDER BY sent_time DESC
+          `
 
         db.query(query, [data.receiverId], (err, results) => {
           if (err) {
@@ -757,16 +779,16 @@ wss.on('connection', (ws, req) => {
           }
 
           const senderReceiverQuery = `
-              SELECT
-                u1.first_name AS sender_first_name,
-                u1.last_name AS sender_last_name,
-                u2.first_name AS reciever_first_name,
-                u2.last_name AS reciever_last_name
-              FROM users u1
-              LEFT JOIN users u2
-                ON u2.id = ?
-              WHERE u1.id = ?
-            `
+                SELECT
+                  u1.first_name AS sender_first_name,
+                  u1.last_name AS sender_last_name,
+                  u2.first_name AS reciever_first_name,
+                  u2.last_name AS reciever_last_name
+                FROM users u1
+                LEFT JOIN users u2
+                  ON u2.id = ?
+                WHERE u1.id = ?
+              `
 
           results.forEach(msg => {
             db.query(
@@ -825,38 +847,38 @@ wss.on('connection', (ws, req) => {
 
       if (data.sendType === 'update_read_status') {
         const updateQuery = `
-          UPDATE user_message
-          SET is_read = 1
-          WHERE
-            (
-              group_id = 0
-              AND reciever_id = ?
-              AND sender_id = ?
-            )
-            OR
-            (
-              reciever_id = 0
-              AND sender_id = ?
-              AND group_id = ?
-            )
-        `
+            UPDATE user_message
+            SET is_read = 1
+            WHERE
+              (
+                group_id = 0
+                AND reciever_id = ?
+                AND sender_id = ?
+              )
+              OR
+              (
+                reciever_id = 0
+                AND sender_id = ?
+                AND group_id = ?
+              )
+          `
 
         if (data.isGroup) {
           const groupUpdateQuery = `
-            UPDATE user_message
-            SET is_read =
-              CASE
-                WHEN is_read = '0'
-                  THEN ?
-                WHEN FIND_IN_SET(?, is_read) = 0
-                  THEN CONCAT(is_read, ',', ?)
-                ELSE is_read
-              END
-            WHERE
-              reciever_id = 0
-              AND sender_id != ?
-              AND group_id = ?
-          `
+              UPDATE user_message
+              SET is_read =
+                CASE
+                  WHEN is_read = '0'
+                    THEN ?
+                  WHEN FIND_IN_SET(?, is_read) = 0
+                    THEN CONCAT(is_read, ',', ?)
+                  ELSE is_read
+                END
+              WHERE
+                reciever_id = 0
+                AND sender_id != ?
+                AND group_id = ?
+            `
 
           const readId = data.useType ? data.recieverId : data.id
 
@@ -1023,6 +1045,36 @@ app.post('/broadcast-duty-status', (req, res) => {
       message: 'Failed to broadcast duty status'
     })
   }
+})
+
+// ==========================================
+// Bluetooth HTTP Server
+// ==========================================
+
+app.post('/broadcast-force-logout', (req, res) => {
+  const data = req.body
+
+  const driverId = Number(data.driverId)
+
+  if (!driverId) {
+    return res.status(400).json({
+      status: 'failure',
+      message: 'Valid driverId is required'
+    })
+  }
+
+  const sent = sendForceLogOut(driverId, {
+    sendType: 'user-force-logout',
+    driverId,
+    token: data.token,
+    message: 'User logout successfully'
+  })
+
+  return res.status(200).json({
+    status: 'success',
+    message: sent ? 'User logout successfully' : 'User is not connected',
+    driverId
+  })
 })
 
 // ==========================================
