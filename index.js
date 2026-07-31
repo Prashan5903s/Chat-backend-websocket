@@ -145,6 +145,59 @@ function sendForceLogOut (userId, data) {
 }
 
 // ==========================================
+// Laravel access token
+// ==========================================
+
+/**
+ * Check Laravel access token
+ */
+async function checkAccessToken (token) {
+  try {
+    if (!token) {
+      return {
+        valid: false,
+        message: 'Access token is required'
+      }
+    }
+
+    const response = await axios.post(
+      `${process.env.BACKEND_URL}/check/user/access/token`,
+      {},
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json'
+        },
+        timeout: 10000
+      }
+    )
+
+    if (response.status === 200 && response.data?.success === true) {
+      return {
+        valid: true,
+        userId: response.data?.data?.user_id
+      }
+    }
+
+    return {
+      valid: false,
+      message: response.data?.message || 'Invalid access token'
+    }
+  } catch (error) {
+    console.error(
+      'Access token validation failed:',
+      error.response?.data || error.message
+    )
+
+    return {
+      valid: false,
+      message:
+        error.response?.data?.message || 'Access token is invalid or expired'
+    }
+  }
+}
+
+// ==========================================
 // WebSocket Connection
 // ==========================================
 
@@ -158,7 +211,7 @@ wss.on('connection', (ws, req) => {
   // WebSocket Message
   // ========================================
 
-  ws.on('message', message => {
+  ws.on('message', async message => {
     try {
       // ======================================
       // IMPORTANT:
@@ -217,47 +270,105 @@ wss.on('connection', (ws, req) => {
       // ======================================
 
       if (data.sendType === 'auth') {
-        ws.userId = data.senderId
+        // Token is required
+        if (!data.token) {
+          sendToClient(ws, {
+            type: 'error',
+            sendType: 'auth_failed',
+            authenticated: false,
+            message: 'Access token is required'
+          })
+
+          // Close unauthorized connection
+          ws.close(1008, 'Access token is required')
+
+          return
+        }
+
+        // Check token with Laravel API
+        const tokenResult = await checkAccessToken(data.token)
+
+        // Token invalid / expired
+        if (!tokenResult.valid) {
+          sendToClient(ws, {
+            type: 'error',
+            sendType: 'auth_failed',
+            authenticated: false,
+            message: tokenResult.message
+          })
+
+          // Close unauthorized connection
+          ws.close(1008, 'Invalid or expired access token')
+
+          return
+        }
+
+        // Token is valid
+        // Prefer the user ID returned by Laravel
+        ws.userId = tokenResult.userId || data.senderId
+
+        // Optional: Store token on WebSocket connection
+        ws.accessToken = data.token
+
+        console.log(
+          `WebSocket authenticated successfully. User ID: ${ws.userId}`
+        )
+
+        // Send authentication success
+        sendToClient(ws, {
+          type: 'success',
+          sendType: 'auth_success',
+          authenticated: true,
+          user_id: ws.userId,
+          message: 'Access token is valid and active.'
+        })
 
         const isGroup = data.isGroup ? 1 : 0
 
         const query = `
-            SELECT
-              um.*,
-              u1.first_name AS sender_first_name,
-              u1.last_name AS sender_last_name,
-              u2.first_name AS reciever_first_name,
-              u2.last_name AS reciever_last_name
-            FROM user_message um
-            LEFT JOIN users u1
-              ON um.sender_id = u1.id
-            LEFT JOIN users u2
-              ON um.reciever_id = u2.id
-            WHERE
-              (
-                (um.reciever_id = ? AND um.sender_id = ?)
-                OR
-                (um.group_id = ?)
-                OR
-                (um.reciever_id = ? AND um.sender_id = ?)
-              )
-              AND um.type = ?
-            ORDER BY um.sent_time ASC
-          `
+    SELECT
+      um.*,
+      u1.first_name AS sender_first_name,
+      u1.last_name AS sender_last_name,
+      u2.first_name AS reciever_first_name,
+      u2.last_name AS reciever_last_name
+    FROM user_message um
+    LEFT JOIN users u1
+      ON um.sender_id = u1.id
+    LEFT JOIN users u2
+      ON um.reciever_id = u2.id
+    WHERE
+      (
+        (um.reciever_id = ? AND um.sender_id = ?)
+        OR
+        (um.group_id = ?)
+        OR
+        (um.reciever_id = ? AND um.sender_id = ?)
+      )
+      AND um.type = ?
+    ORDER BY um.sent_time ASC
+  `
 
         db.query(
           query,
           [
             data.recieverId,
-            data.senderId,
+            ws.userId,
             data.recieverId,
-            data.senderId,
+            ws.userId,
             data.recieverId,
             isGroup
           ],
           (err, results) => {
             if (err) {
               console.error('Database error fetching messages:', err)
+
+              sendToClient(ws, {
+                type: 'error',
+                sendType: 'auth_message_error',
+                message: 'Failed to fetch previous messages'
+              })
+
               return
             }
 
@@ -284,7 +395,7 @@ wss.on('connection', (ws, req) => {
                 content: msg.message_text,
                 sent_time: msg.sent_time,
                 id: msg.id,
-                sender: data.senderId
+                sender: ws.userId
               })
             })
           }
