@@ -338,8 +338,6 @@ async function authenticateSocket (ws, data) {
       message: 'Access token is valid and active'
     })
 
-    console.log(`WebSocket authenticated successfully. User ID: ${ws.userId}`)
-
     return true
   } catch (error) {
     console.error('authenticateSocket error:', error)
@@ -462,35 +460,30 @@ function getPreviousMessages (ws, senderId, receiverId, isGroup) {
 
       sendToClient(ws, {
         id: msg.id,
-
         type: Number(msg.type),
-
         sendType: 'previous_message',
-
         sender_id: Number(msg.sender_id),
-
         receiver_id: Number(msg.reciever_id || 0),
-
         reciever_id: Number(msg.reciever_id || 0),
-
         group_id: Number(msg.group_id || 0),
-
         sender_name: senderName,
-
         receiver_name: receiverName,
-
         reciever_name: receiverName,
-
         content: msg.message_text,
-
-        image_url: msg.image_url,
-
+        image_url: msg.image_url || null,
         sent_time: msg.sent_time,
-
         is_read: msg.is_read,
-
         sender: Number(msg.sender_id)
       })
+    })
+
+    sendToClient(ws, {
+      type: 'success',
+      sendType: 'previous_messages_loaded',
+      receiver_id: receiverId,
+      group_id: isGroup ? receiverId : 0,
+      isGroup,
+      total: results.length
     })
   })
 }
@@ -542,19 +535,12 @@ function sendUserInfo (ws, masterId) {
     users.forEach(user => {
       sendToClient(ws, {
         id: user.id,
-
         first_name: user.first_name,
-
         last_name: user.last_name,
-
         email: user.email,
-
         type: 0,
-
         created_at: user.created_at,
-
         image_url: user.avatar_image,
-
         sendType: 'user_list'
       })
     })
@@ -592,19 +578,12 @@ function sendUserInfo (ws, masterId) {
     drivers.forEach(user => {
       sendToClient(ws, {
         id: user.id,
-
         first_name: user.first_name,
-
         last_name: user.last_name,
-
         email: user.email,
-
         type: 0,
-
         created_at: user.created_at,
-
         image_url: user.avatar_image,
-
         sendType: 'driver_list'
       })
     })
@@ -642,19 +621,12 @@ function sendUserInfo (ws, masterId) {
     masters.forEach(user => {
       sendToClient(ws, {
         id: user.id,
-
         first_name: user.first_name,
-
         last_name: user.last_name,
-
         email: user.email,
-
         type: 0,
-
         created_at: user.created_at,
-
         image_url: user.avatar_image,
-
         sendType: 'master_list'
       })
     })
@@ -726,8 +698,6 @@ function sendTotalUnreadMessages (ws) {
     return
   }
 
-  console.log(`Loading unread messages for user ${userId}`)
-
   // ===================================================
   // ONE-TO-ONE UNREAD
   // ===================================================
@@ -778,8 +748,6 @@ function sendTotalUnreadMessages (ws) {
       return
     }
 
-    console.log(`Found ${messages.length} unread one-to-one messages`)
-
     messages.forEach(msg => {
       const senderName = `${msg.sender_first_name || ''} ${
         msg.sender_last_name || ''
@@ -812,8 +780,7 @@ function sendTotalUnreadMessages (ws) {
 
         content: msg.message_text,
 
-        image_url: msg.image_url,
-
+        image_url: msg.image_url || null,
         sent_time: msg.sent_time,
 
         is_read: msg.is_read,
@@ -879,8 +846,6 @@ function sendTotalUnreadMessages (ws) {
       return
     }
 
-    console.log(`Found ${messages.length} unread group messages`)
-
     messages.forEach(msg => {
       const senderName = `${msg.sender_first_name || ''} ${
         msg.sender_last_name || ''
@@ -888,35 +853,20 @@ function sendTotalUnreadMessages (ws) {
 
       sendToClient(ws, {
         id: msg.id,
-
         type: 1,
-
         sendType: 'totalMsg',
-
         sender_id: Number(msg.sender_id),
-
         receiver_id: Number(msg.group_id),
-
         reciever_id: Number(msg.group_id),
-
         group_id: Number(msg.group_id),
-
         group_name: msg.group_name || '',
-
         sender_name: senderName || 'Unknown',
-
         receiver_name: null,
-
         reciever_name: null,
-
         content: msg.message_text,
-
-        image_url: msg.image_url,
-
+        image_url: msg.image_url || null,
         sent_time: msg.sent_time,
-
         is_read: msg.is_read,
-
         sender: Number(msg.sender_id)
       })
     })
@@ -1018,10 +968,6 @@ function updateReadStatus (ws, receiverId, isGroup) {
       return
     }
 
-    console.log(
-      `Read status updated. User: ${userId}, Target: ${targetId}, Group: ${isGroup}, Updated: ${result.affectedRows}`
-    )
-
     sendToClient(ws, {
       type: 'success',
 
@@ -1078,8 +1024,6 @@ wss.on('connection', ws => {
 
         return
       }
-
-      console.log('WebSocket request:', data)
 
       // =================================================
       // AUTHENTICATION
@@ -1148,6 +1092,30 @@ wss.on('connection', ws => {
 
           Boolean(data.isGroup)
         )
+
+        return
+      }
+
+      // =================================================
+      // GET PREVIOUS MESSAGES
+      // =================================================
+
+      if (data.sendType === 'get_previous_messages') {
+        const receiverId = Number(data.receiverId || data.recieverId || 0)
+
+        const isGroup = Boolean(data.isGroup)
+
+        if (!receiverId) {
+          sendToClient(ws, {
+            type: 'error',
+            sendType: 'previous_message_error',
+            message: 'Receiver ID is required'
+          })
+
+          return
+        }
+
+        getPreviousMessages(ws, authenticatedUserId, receiverId, isGroup)
 
         return
       }
@@ -1330,9 +1298,7 @@ wss.on('connection', ws => {
         if (!receiverId) {
           sendToClient(ws, {
             type: 'error',
-
             sendType: 'message_error',
-
             message: 'Receiver ID is required'
           })
 
@@ -1397,17 +1363,11 @@ wss.on('connection', ws => {
                 query,
                 [
                   1,
-
                   senderId,
-
                   receiverId,
-
-                  imageUrl,
-
+                  imageUrl || null,
                   content,
-
                   data.master_id,
-
                   data.master_company_id,
 
                   senderId,
@@ -1434,31 +1394,18 @@ wss.on('connection', ws => {
                   getUserName(senderId, sender => {
                     const messageData = {
                       id: result.insertId,
-
                       type: 1,
-
                       sendType: 'new_message',
-
                       sender_id: senderId,
-
                       receiver_id: receiverId,
-
                       reciever_id: receiverId,
-
                       group_id: receiverId,
-
                       sender_name: sender?.name || 'Unknown',
-
                       receiver_name: null,
-
                       reciever_name: null,
-
                       content,
-
-                      image_url: imageUrl,
-
+                      image_url: imageUrl || null,
                       sent_time: sentTime,
-
                       sender: senderId
                     }
 
@@ -1520,23 +1467,14 @@ wss.on('connection', ws => {
           query,
           [
             0,
-
             senderId,
-
             receiverId,
-
-            imageUrl,
-
+            imageUrl || null,
             content,
-
             data.master_id,
-
             data.master_company_id,
-
             senderId,
-
             sentTime,
-
             0
           ],
           (err, result) => {
@@ -1558,31 +1496,18 @@ wss.on('connection', ws => {
               getUserName(receiverId, receiver => {
                 const messageData = {
                   id: result.insertId,
-
                   type: 0,
-
                   sendType: 'new_message',
-
                   sender_id: senderId,
-
                   receiver_id: receiverId,
-
                   reciever_id: receiverId,
-
                   group_id: 0,
-
                   sender_name: sender?.name || 'Unknown',
-
                   receiver_name: receiver?.name || 'Unknown',
-
                   reciever_name: receiver?.name || 'Unknown',
-
                   content,
-
-                  image_url: imageUrl,
-
+                  image_url: imageUrl || null,
                   sent_time: sentTime,
-
                   sender: senderId
                 }
 
@@ -1626,11 +1551,7 @@ wss.on('connection', ws => {
   // =====================================================
 
   ws.on('close', (code, reason) => {
-    console.log(
-      `WebSocket disconnected. User: ${
-        ws.userId || 'Unauthenticated'
-      }, Code: ${code}, Reason: ${reason?.toString() || ''}`
-    )
+    console.log(`WebSocket disconnected`)
   })
 
   // =====================================================
@@ -1797,8 +1718,6 @@ app.post('/broadcast-force-logout', (req, res) => {
         message: 'Valid driverId is required'
       })
     }
-
-    console.log(`Force logout requested for user ${driverId}`)
 
     const sent = closeUserSockets(
       driverId,
