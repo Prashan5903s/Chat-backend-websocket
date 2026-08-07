@@ -282,7 +282,7 @@ async function authenticateSocket (ws, data) {
 
     const tokenResult = await checkAccessToken(token)
 
-    console.log('Token result', tokenResult)
+    console.log('Token result', token, tokenResult)
 
     if (!tokenResult.valid) {
       sendToClient(ws, {
