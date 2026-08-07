@@ -261,6 +261,8 @@ async function authenticateSocket (ws, data) {
     const token = data?.token
 
     if (!token) {
+      console.log('Token not present')
+
       sendToClient(ws, {
         type: 'error',
 
@@ -279,6 +281,8 @@ async function authenticateSocket (ws, data) {
     }
 
     const tokenResult = await checkAccessToken(token)
+
+    console.log('Token result', tokenResult)
 
     if (!tokenResult.valid) {
       sendToClient(ws, {
