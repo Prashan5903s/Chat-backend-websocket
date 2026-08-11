@@ -32,7 +32,6 @@ const db = mysql.createPool({
 db.getConnection((err, connection) => {
   if (err) {
     console.error('Database connection failed:', err)
-
     process.exit(1)
   }
 
@@ -187,51 +186,135 @@ function getUserName (userId, callback) {
 }
 
 // =====================================================
+// NORMALIZE ACCESS TOKEN
+// =====================================================
+
+function normalizeAccessToken (token) {
+  return String(token || '')
+    .replace(/^Bearer\s+/i, '')
+    .trim()
+}
+
+// =====================================================
 // LARAVEL TOKEN VALIDATION
 // =====================================================
 
 async function checkAccessToken (token) {
   try {
-    if (!token) {
+    const normalizedToken = normalizeAccessToken(token)
+
+    if (!normalizedToken) {
       return {
         valid: false,
+        statusCode: 401,
         message: 'Access token is required'
       }
     }
 
+    const backendUrl = String(process.env.BACKEND_URL || '').replace(/\/$/, '')
+
+    if (!backendUrl) {
+      console.error('[AUTH] BACKEND_URL is not configured')
+
+      return {
+        valid: false,
+        statusCode: 500,
+        message: 'BACKEND_URL is not configured'
+      }
+    }
+
+    const validationUrl = `${backendUrl}/check/user/access/token`
+
+    console.log('----------------------------------------')
+    console.log('[AUTH] Validating access token')
+    console.log('[AUTH] Validation URL:', validationUrl)
+    console.log('[AUTH] Token present:', true)
+    console.log('[AUTH] Token length:', normalizedToken.length)
+    console.log('----------------------------------------')
+
     const response = await axios.post(
-      `${process.env.BACKEND_URL}/check/user/access/token`,
+      validationUrl,
       {},
       {
         headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json'
+          Authorization: `Bearer ${normalizedToken}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/json'
         },
-        timeout: 10000
+
+        timeout: 10000,
+
+        // IMPORTANT:
+        // Allow axios to return 401 instead of throwing.
+        validateStatus: () => true
       }
     )
+
+    console.log('[AUTH] Laravel status:', response.status)
+
+    console.log('[AUTH] Laravel success:', response.data?.success)
+
+    console.log('[AUTH] Laravel message:', response.data?.message)
+
+    // ===================================================
+    // SUCCESS
+    // ===================================================
 
     if (response.status === 200 && response.data?.success === true) {
+      const userId =
+        response.data?.data?.user_id ??
+        response.data?.data?.id ??
+        response.data?.user_id ??
+        response.data?.user?.id
+
+      if (!userId) {
+        console.error(
+          '[AUTH] Token is valid but Laravel did not return user ID'
+        )
+
+        return {
+          valid: false,
+          statusCode: 200,
+          message: 'Token is valid but Laravel did not return a user ID'
+        }
+      }
+
       return {
         valid: true,
-        userId: response.data?.data?.user_id
+        statusCode: response.status,
+        userId: Number(userId)
       }
     }
 
-    return {
-      valid: false,
-      message: response.data?.message || 'Access token is invalid or expired'
-    }
-  } catch (error) {
-    console.error(
-      'Access token validation failed:',
-      error.response?.data || error.message
-    )
+    // ===================================================
+    // FAILED
+    // ===================================================
 
     return {
       valid: false,
+
+      statusCode: response.status,
+
       message:
-        error.response?.data?.message || 'Access token is invalid or expired'
+        response.data?.message ||
+        `Access token validation failed with status ${response.status}`
+    }
+  } catch (error) {
+    console.error('[AUTH] Token validation request failed:', error.message)
+
+    console.error('[AUTH] HTTP status:', error.response?.status || null)
+
+    console.error('[AUTH] Laravel response:', error.response?.data || null)
+
+    return {
+      valid: false,
+
+      statusCode: error.response?.status || 500,
+
+      message:
+        error.response?.data?.message ||
+        error.message ||
+        'Access token validation failed'
     }
   }
 }
@@ -242,6 +325,10 @@ async function checkAccessToken (token) {
 
 async function authenticateSocket (ws, data) {
   try {
+    // ===================================================
+    // ALREADY AUTHENTICATED
+    // ===================================================
+
     if (ws.authenticated === true) {
       sendToClient(ws, {
         type: 'success',
@@ -258,10 +345,14 @@ async function authenticateSocket (ws, data) {
       return true
     }
 
-    const token = data?.token
+    // ===================================================
+    // GET TOKEN
+    // ===================================================
+
+    const token = normalizeAccessToken(data?.token)
 
     if (!token) {
-      console.log('Token not present')
+      console.warn('[AUTH] Authentication request received without token')
 
       sendToClient(ws, {
         type: 'error',
@@ -270,19 +361,44 @@ async function authenticateSocket (ws, data) {
 
         authenticated: false,
 
+        statusCode: 401,
+
         message: 'Access token is required'
       })
 
       ws.authenticated = false
+      ws.userId = null
+      ws.accessToken = null
 
-      ws.close(1008, 'Access token required')
-
+      // IMPORTANT:
+      // DO NOT CLOSE THE WEBSOCKET.
+      //
+      // The client can remain connected and decide
+      // when/how to authenticate again.
       return false
     }
 
+    // ===================================================
+    // VALIDATE TOKEN
+    // ===================================================
+
     const tokenResult = await checkAccessToken(token)
 
-    console.log('Token result', token, tokenResult)
+    // IMPORTANT:
+    // Never print the actual access token.
+    console.log('[AUTH] Token validation result:', {
+      valid: tokenResult.valid,
+
+      statusCode: tokenResult.statusCode || null,
+
+      userId: tokenResult.userId || null,
+
+      message: tokenResult.message || null
+    })
+
+    // ===================================================
+    // TOKEN INVALID
+    // ===================================================
 
     if (!tokenResult.valid) {
       sendToClient(ws, {
@@ -292,15 +408,23 @@ async function authenticateSocket (ws, data) {
 
         authenticated: false,
 
-        message: tokenResult.message
+        statusCode: tokenResult.statusCode || 401,
+
+        message: tokenResult.message || 'Access token is invalid or expired'
       })
 
       ws.authenticated = false
+      ws.userId = null
+      ws.accessToken = null
 
-      ws.close(1008, 'Invalid access token')
-
+      // IMPORTANT:
+      // DO NOT CLOSE SOCKET HERE.
       return false
     }
+
+    // ===================================================
+    // GET USER ID
+    // ===================================================
 
     const authenticatedUserId = Number(tokenResult.userId)
 
@@ -312,15 +436,23 @@ async function authenticateSocket (ws, data) {
 
         authenticated: false,
 
+        statusCode: 401,
+
         message: 'Unable to identify authenticated user'
       })
 
       ws.authenticated = false
+      ws.userId = null
+      ws.accessToken = null
 
-      ws.close(1008, 'Invalid user')
-
+      // IMPORTANT:
+      // DO NOT CLOSE SOCKET HERE.
       return false
     }
+
+    // ===================================================
+    // AUTHENTICATION SUCCESS
+    // ===================================================
 
     ws.userId = authenticatedUserId
 
@@ -342,11 +474,19 @@ async function authenticateSocket (ws, data) {
       message: 'Access token is valid and active'
     })
 
+    console.log(
+      `[AUTH] WebSocket authenticated successfully for user ${ws.userId}`
+    )
+
     return true
   } catch (error) {
-    console.error('authenticateSocket error:', error)
+    console.error('[AUTH] authenticateSocket error:', error)
 
     ws.authenticated = false
+
+    ws.userId = null
+
+    ws.accessToken = null
 
     sendToClient(ws, {
       type: 'error',
@@ -355,11 +495,13 @@ async function authenticateSocket (ws, data) {
 
       authenticated: false,
 
+      statusCode: 500,
+
       message: 'Authentication failed'
     })
 
-    ws.close(1011, 'Authentication error')
-
+    // IMPORTANT:
+    // DO NOT CLOSE SOCKET HERE.
     return false
   }
 }
@@ -464,29 +606,48 @@ function getPreviousMessages (ws, senderId, receiverId, isGroup) {
 
       sendToClient(ws, {
         id: msg.id,
+
         type: Number(msg.type),
+
         sendType: 'previous_message',
+
         sender_id: Number(msg.sender_id),
+
         receiver_id: Number(msg.reciever_id || 0),
+
         reciever_id: Number(msg.reciever_id || 0),
+
         group_id: Number(msg.group_id || 0),
+
         sender_name: senderName,
+
         receiver_name: receiverName,
+
         reciever_name: receiverName,
+
         content: msg.message_text,
+
         image_url: msg.image_url || null,
+
         sent_time: msg.sent_time,
+
         is_read: msg.is_read,
+
         sender: Number(msg.sender_id)
       })
     })
 
     sendToClient(ws, {
       type: 'success',
+
       sendType: 'previous_messages_loaded',
+
       receiver_id: receiverId,
+
       group_id: isGroup ? receiverId : 0,
+
       isGroup,
+
       total: results.length
     })
   })
@@ -502,8 +663,6 @@ function sendUserInfo (ws, masterId) {
   if (!senderId) {
     return
   }
-
-  // CLEAR OLD CLIENT DATA
 
   sendToClient(ws, {
     sendType: 'user_list_start'
@@ -539,12 +698,19 @@ function sendUserInfo (ws, masterId) {
     users.forEach(user => {
       sendToClient(ws, {
         id: user.id,
+
         first_name: user.first_name,
+
         last_name: user.last_name,
+
         email: user.email,
+
         type: 0,
+
         created_at: user.created_at,
+
         image_url: user.avatar_image,
+
         sendType: 'user_list'
       })
     })
@@ -582,12 +748,19 @@ function sendUserInfo (ws, masterId) {
     drivers.forEach(user => {
       sendToClient(ws, {
         id: user.id,
+
         first_name: user.first_name,
+
         last_name: user.last_name,
+
         email: user.email,
+
         type: 0,
+
         created_at: user.created_at,
+
         image_url: user.avatar_image,
+
         sendType: 'driver_list'
       })
     })
@@ -625,12 +798,19 @@ function sendUserInfo (ws, masterId) {
     masters.forEach(user => {
       sendToClient(ws, {
         id: user.id,
+
         first_name: user.first_name,
+
         last_name: user.last_name,
+
         email: user.email,
+
         type: 0,
+
         created_at: user.created_at,
+
         image_url: user.avatar_image,
+
         sendType: 'master_list'
       })
     })
@@ -785,6 +965,7 @@ function sendTotalUnreadMessages (ws) {
         content: msg.message_text,
 
         image_url: msg.image_url || null,
+
         sent_time: msg.sent_time,
 
         is_read: msg.is_read,
@@ -857,20 +1038,35 @@ function sendTotalUnreadMessages (ws) {
 
       sendToClient(ws, {
         id: msg.id,
+
         type: 1,
+
         sendType: 'totalMsg',
+
         sender_id: Number(msg.sender_id),
+
         receiver_id: Number(msg.group_id),
+
         reciever_id: Number(msg.group_id),
+
         group_id: Number(msg.group_id),
+
         group_name: msg.group_name || '',
+
         sender_name: senderName || 'Unknown',
+
         receiver_name: null,
+
         reciever_name: null,
+
         content: msg.message_text,
+
         image_url: msg.image_url || null,
+
         sent_time: msg.sent_time,
+
         is_read: msg.is_read,
+
         sender: Number(msg.sender_id)
       })
     })
@@ -906,10 +1102,6 @@ function updateReadStatus (ws, receiverId, isGroup) {
 
   let params
 
-  // ===================================================
-  // GROUP
-  // ===================================================
-
   if (isGroup) {
     query = `
       UPDATE user_message
@@ -930,12 +1122,7 @@ function updateReadStatus (ws, receiverId, isGroup) {
     `
 
     params = [targetId, userId]
-  }
-
-  // ===================================================
-  // ONE-TO-ONE
-  // ===================================================
-  else {
+  } else {
     query = `
       UPDATE user_message
 
@@ -1003,7 +1190,14 @@ wss.on('connection', ws => {
 
   ws.authenticatedAt = null
 
+  // Prevent multiple simultaneous auth requests.
+  ws.authenticating = false
+
   console.log('WebSocket client connected')
+
+  // ===================================================
+  // MESSAGE
+  // ===================================================
 
   ws.on('message', async message => {
     try {
@@ -1034,21 +1228,43 @@ wss.on('connection', ws => {
       // =================================================
 
       if (data.sendType === 'auth') {
-        const authenticated = await authenticateSocket(ws, data)
+        // Prevent multiple simultaneous auth calls.
+        if (ws.authenticating === true) {
+          sendToClient(ws, {
+            type: 'error',
 
-        if (!authenticated) {
+            sendType: 'auth_in_progress',
+
+            authenticated: false,
+
+            message: 'Authentication is already in progress'
+          })
+
           return
         }
 
-        // OPTIONAL:
-        // Load previous chat after auth
+        ws.authenticating = true
 
-        if (data.receiverId || data.recieverId) {
-          const receiverId = Number(data.receiverId || data.recieverId)
+        try {
+          const authenticated = await authenticateSocket(ws, data)
 
-          const isGroup = Boolean(data.isGroup)
+          if (!authenticated) {
+            return
+          }
 
-          getPreviousMessages(ws, ws.userId, receiverId, isGroup)
+          // =================================================
+          // LOAD PREVIOUS CHAT AFTER AUTH
+          // =================================================
+
+          if (data.receiverId || data.recieverId) {
+            const receiverId = Number(data.receiverId || data.recieverId)
+
+            const isGroup = Boolean(data.isGroup)
+
+            getPreviousMessages(ws, ws.userId, receiverId, isGroup)
+          }
+        } finally {
+          ws.authenticating = false
         }
 
         return
@@ -1112,7 +1328,9 @@ wss.on('connection', ws => {
         if (!receiverId) {
           sendToClient(ws, {
             type: 'error',
+
             sendType: 'previous_message_error',
+
             message: 'Receiver ID is required'
           })
 
@@ -1168,21 +1386,23 @@ wss.on('connection', ws => {
         const groupUsers = [...new Set([senderId, ...selectedUsers])]
 
         const groupQuery = `
-            INSERT INTO groups
-            (
-              group_name,
-              master_id,
-              master_company_id,
-              created_by,
-              is_active
-            )
+          INSERT INTO groups
+          (
+            group_name,
+            master_id,
+            master_company_id,
+            created_by,
+            is_active
+          )
 
-            VALUES (?, ?, ?, ?, ?)
-          `
+          VALUES (?, ?, ?, ?, ?)
+        `
 
         db.query(
           groupQuery,
+
           [groupName, masterId, masterCompanyId, senderId, 1],
+
           (err, result) => {
             if (err) {
               console.error('Create group error:', err)
@@ -1201,78 +1421,84 @@ wss.on('connection', ws => {
             const groupId = result.insertId
 
             const insertUser = `
-                INSERT INTO user_group
-                (
-                  group_id,
-                  user_id,
-                  is_active
-                )
+              INSERT INTO user_group
+              (
+                group_id,
+                user_id,
+                is_active
+              )
 
-                VALUES (?, ?, ?)
-              `
+              VALUES (?, ?, ?)
+            `
 
             let completed = 0
 
             let failed = false
 
             groupUsers.forEach(userId => {
-              db.query(insertUser, [groupId, userId, 1], error => {
-                if (failed) {
-                  return
-                }
+              db.query(
+                insertUser,
 
-                if (error) {
-                  failed = true
+                [groupId, userId, 1],
 
-                  console.error('User group insert error:', error)
-
-                  sendToClient(ws, {
-                    type: 'error',
-
-                    sendType: 'group_create_error',
-
-                    message: 'Failed to add group members'
-                  })
-
-                  return
-                }
-
-                completed++
-
-                if (completed === groupUsers.length) {
-                  const groupData = {
-                    id: groupId,
-
-                    group_id: groupId,
-
-                    type: 1,
-
-                    group_name: groupName,
-
-                    created_by: senderId,
-
-                    created_at: new Date(),
-
-                    sendType: 'group_list'
+                error => {
+                  if (failed) {
+                    return
                   }
 
-                  groupUsers.forEach(userId => {
-                    sendToUser(userId, groupData)
-                  })
+                  if (error) {
+                    failed = true
 
-                  sendToClient(ws, {
-                    type: 'success',
+                    console.error('User group insert error:', error)
 
-                    sendType: 'group_create_success',
+                    sendToClient(ws, {
+                      type: 'error',
 
-                    group_id: groupId,
+                      sendType: 'group_create_error',
 
-                    group_name: groupName,
+                      message: 'Failed to add group members'
+                    })
 
-                    message: 'Group created successfully'
-                  })
+                    return
+                  }
+
+                  completed++
+
+                  if (completed === groupUsers.length) {
+                    const groupData = {
+                      id: groupId,
+
+                      group_id: groupId,
+
+                      type: 1,
+
+                      group_name: groupName,
+
+                      created_by: senderId,
+
+                      created_at: new Date(),
+
+                      sendType: 'group_list'
+                    }
+
+                    groupUsers.forEach(userId => {
+                      sendToUser(userId, groupData)
+                    })
+
+                    sendToClient(ws, {
+                      type: 'success',
+
+                      sendType: 'group_create_success',
+
+                      group_id: groupId,
+
+                      group_name: groupName,
+
+                      message: 'Group created successfully'
+                    })
+                  }
                 }
-              })
+              )
             })
           }
         )
@@ -1302,7 +1528,9 @@ wss.on('connection', ws => {
         if (!receiverId) {
           sendToClient(ws, {
             type: 'error',
+
             sendType: 'message_error',
+
             message: 'Receiver ID is required'
           })
 
@@ -1315,23 +1543,25 @@ wss.on('connection', ws => {
 
         if (type === 1) {
           const memberQuery = `
-              SELECT 1
+            SELECT 1
 
-              FROM user_group
+            FROM user_group
 
-              WHERE
-                group_id = ?
+            WHERE
+              group_id = ?
 
-                AND user_id = ?
+              AND user_id = ?
 
-                AND is_active = 1
+              AND is_active = 1
 
-              LIMIT 1
-            `
+            LIMIT 1
+          `
 
           db.query(
             memberQuery,
+
             [receiverId, senderId],
+
             (memberError, members) => {
               if (memberError || !members.length) {
                 sendToClient(ws, {
@@ -1346,25 +1576,26 @@ wss.on('connection', ws => {
               }
 
               const query = `
-                  INSERT INTO user_message
-                  (
-                    type,
-                    sender_id,
-                    group_id,
-                    image_url,
-                    message_text,
-                    master_id,
-                    master_company_id,
-                    created_by,
-                    sent_time,
-                    is_read
-                  )
+                INSERT INTO user_message
+                (
+                  type,
+                  sender_id,
+                  group_id,
+                  image_url,
+                  message_text,
+                  master_id,
+                  master_company_id,
+                  created_by,
+                  sent_time,
+                  is_read
+                )
 
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                `
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              `
 
               db.query(
                 query,
+
                 [
                   1,
                   senderId,
@@ -1373,13 +1604,11 @@ wss.on('connection', ws => {
                   content,
                   data.master_id,
                   data.master_company_id,
-
                   senderId,
-
                   sentTime,
-
                   0
                 ],
+
                 (err, result) => {
                   if (err) {
                     console.error('Group message insert error:', err)
@@ -1398,18 +1627,31 @@ wss.on('connection', ws => {
                   getUserName(senderId, sender => {
                     const messageData = {
                       id: result.insertId,
+
                       type: 1,
+
                       sendType: 'new_message',
+
                       sender_id: senderId,
+
                       receiver_id: receiverId,
+
                       reciever_id: receiverId,
+
                       group_id: receiverId,
+
                       sender_name: sender?.name || 'Unknown',
+
                       receiver_name: null,
+
                       reciever_name: null,
+
                       content,
+
                       image_url: imageUrl || null,
+
                       sent_time: sentTime,
+
                       sender: senderId
                     }
 
@@ -1428,7 +1670,9 @@ wss.on('connection', ws => {
 
                       db.query(
                         memberQuery,
+
                         [receiverId, clientUserId],
+
                         (memberError, members) => {
                           if (!memberError && members.length) {
                             sendToClient(client, messageData)
@@ -1450,25 +1694,26 @@ wss.on('connection', ws => {
         // =================================================
 
         const query = `
-            INSERT INTO user_message
-            (
-              type,
-              sender_id,
-              reciever_id,
-              image_url,
-              message_text,
-              master_id,
-              master_company_id,
-              created_by,
-              sent_time,
-              is_read
-            )
+          INSERT INTO user_message
+          (
+            type,
+            sender_id,
+            reciever_id,
+            image_url,
+            message_text,
+            master_id,
+            master_company_id,
+            created_by,
+            sent_time,
+            is_read
+          )
 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `
 
         db.query(
           query,
+
           [
             0,
             senderId,
@@ -1481,6 +1726,7 @@ wss.on('connection', ws => {
             sentTime,
             0
           ],
+
           (err, result) => {
             if (err) {
               console.error('Message insert error:', err)
@@ -1500,18 +1746,31 @@ wss.on('connection', ws => {
               getUserName(receiverId, receiver => {
                 const messageData = {
                   id: result.insertId,
+
                   type: 0,
+
                   sendType: 'new_message',
+
                   sender_id: senderId,
+
                   receiver_id: receiverId,
+
                   reciever_id: receiverId,
+
                   group_id: 0,
+
                   sender_name: sender?.name || 'Unknown',
+
                   receiver_name: receiver?.name || 'Unknown',
+
                   reciever_name: receiver?.name || 'Unknown',
+
                   content,
+
                   image_url: imageUrl || null,
+
                   sent_time: sentTime,
+
                   sender: senderId
                 }
 
@@ -1555,7 +1814,17 @@ wss.on('connection', ws => {
   // =====================================================
 
   ws.on('close', (code, reason) => {
-    console.log(`WebSocket disconnected`)
+    console.log(
+      `WebSocket disconnected | user=${
+        ws.userId || 'Unknown'
+      } | code=${code} | reason=${reason?.toString() || 'none'}`
+    )
+
+    ws.authenticated = false
+
+    ws.userId = null
+
+    ws.accessToken = null
   })
 
   // =====================================================
@@ -1582,8 +1851,16 @@ setInterval(async () => {
     try {
       const tokenResult = await checkAccessToken(ws.accessToken)
 
+      // =================================================
+      // TOKEN EXPIRED / INVALID
+      // =================================================
+
       if (!tokenResult.valid) {
         ws.authenticated = false
+
+        ws.userId = null
+
+        ws.accessToken = null
 
         sendToClient(ws, {
           type: 'error',
@@ -1592,16 +1869,26 @@ setInterval(async () => {
 
           authenticated: false,
 
+          statusCode: tokenResult.statusCode || 401,
+
           message: tokenResult.message || 'Session expired'
         })
 
-        ws.close(1008, 'Session expired')
-
+        // IMPORTANT:
+        // Do not close WebSocket.
         continue
       }
 
+      // =================================================
+      // USER MISMATCH
+      // =================================================
+
       if (Number(tokenResult.userId) !== Number(ws.userId)) {
         ws.authenticated = false
+
+        ws.userId = null
+
+        ws.accessToken = null
 
         sendToClient(ws, {
           type: 'error',
@@ -1610,10 +1897,13 @@ setInterval(async () => {
 
           authenticated: false,
 
+          statusCode: 401,
+
           message: 'Authentication mismatch'
         })
 
-        ws.close(1008, 'Authentication mismatch')
+        // IMPORTANT:
+        // Do not close WebSocket.
       }
     } catch (error) {
       console.error('Periodic token validation error:', error)
@@ -1725,6 +2015,7 @@ app.post('/broadcast-force-logout', (req, res) => {
 
     const sent = closeUserSockets(
       driverId,
+
       'You have been logged out by the administrator'
     )
 
@@ -1774,4 +2065,6 @@ server.on('upgrade', (request, socket, head) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`HTTP + WebSocket server running on port ${PORT}`)
+
+  console.log(`[CONFIG] BACKEND_URL=${process.env.BACKEND_URL || '(missing)'}`)
 })
