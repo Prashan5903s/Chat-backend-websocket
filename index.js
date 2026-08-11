@@ -108,7 +108,7 @@ function closeUserSockets (userId, reason = 'Session expired') {
 
       client.authenticated = false
 
-      client.close(1008, reason)
+      // client.close(1008, reason)
 
       closed = true
     }
