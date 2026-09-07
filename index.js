@@ -1661,18 +1661,19 @@ wss.on('connection', ws => {
 
           (err, result) => {
             if (err) {
-              console.error('Message insert error:')
+              
+              console.error('============== MYSQL ERROR ==============')
+              console.error(err)
               console.error('Code:', err.code)
               console.error('Errno:', err.errno)
               console.error('SQL State:', err.sqlState)
               console.error('Message:', err.sqlMessage)
-              console.error('SQL:', err.sql)
+              console.error('========================================')
 
               sendToClient(ws, {
                 type: 'error',
                 sendType: 'message_error',
-                message: 'Failed to send message',
-                err: err
+                message: err.sqlMessage
               })
 
               return
