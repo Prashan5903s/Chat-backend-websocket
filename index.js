@@ -40,17 +40,9 @@ db.getConnection((err, connection) => {
   connection.release()
 })
 
-// =====================================================
-// WEBSOCKET SERVER
-// =====================================================
-
 const wss = new WebSocket.Server({
   noServer: true
 })
-
-// =====================================================
-// HELPERS
-// =====================================================
 
 function sendToClient (ws, data) {
   try {
@@ -141,10 +133,6 @@ function requireAuthentication (ws) {
   return true
 }
 
-// =====================================================
-// GET USER NAME
-// =====================================================
-
 function getUserName (userId, callback) {
   const query = `
     SELECT
@@ -185,19 +173,11 @@ function getUserName (userId, callback) {
   })
 }
 
-// =====================================================
-// NORMALIZE ACCESS TOKEN
-// =====================================================
-
 function normalizeAccessToken (token) {
   return String(token || '')
     .replace(/^Bearer\s+/i, '')
     .trim()
 }
-
-// =====================================================
-// LARAVEL TOKEN VALIDATION
-// =====================================================
 
 async function checkAccessToken (token) {
   try {
@@ -256,10 +236,6 @@ async function checkAccessToken (token) {
 
     console.log('[AUTH] Laravel message:', response.data?.message)
 
-    // ===================================================
-    // SUCCESS
-    // ===================================================
-
     if (response.status === 200 && response.data?.success === true) {
       const userId =
         response.data?.data?.user_id ??
@@ -285,10 +261,6 @@ async function checkAccessToken (token) {
         userId: Number(userId)
       }
     }
-
-    // ===================================================
-    // FAILED
-    // ===================================================
 
     return {
       valid: false,
@@ -319,16 +291,8 @@ async function checkAccessToken (token) {
   }
 }
 
-// =====================================================
-// AUTHENTICATE SOCKET
-// =====================================================
-
 async function authenticateSocket (ws, data) {
   try {
-    // ===================================================
-    // ALREADY AUTHENTICATED
-    // ===================================================
-
     if (ws.authenticated === true) {
       sendToClient(ws, {
         type: 'success',
@@ -344,10 +308,6 @@ async function authenticateSocket (ws, data) {
 
       return true
     }
-
-    // ===================================================
-    // GET TOKEN
-    // ===================================================
 
     const token = normalizeAccessToken(data?.token)
 
@@ -378,10 +338,6 @@ async function authenticateSocket (ws, data) {
       return false
     }
 
-    // ===================================================
-    // VALIDATE TOKEN
-    // ===================================================
-
     const tokenResult = await checkAccessToken(token)
 
     // IMPORTANT:
@@ -395,10 +351,6 @@ async function authenticateSocket (ws, data) {
 
       message: tokenResult.message || null
     })
-
-    // ===================================================
-    // TOKEN INVALID
-    // ===================================================
 
     if (!tokenResult.valid) {
       sendToClient(ws, {
@@ -421,10 +373,6 @@ async function authenticateSocket (ws, data) {
       // DO NOT CLOSE SOCKET HERE.
       return false
     }
-
-    // ===================================================
-    // GET USER ID
-    // ===================================================
 
     const authenticatedUserId = Number(tokenResult.userId)
 
@@ -449,10 +397,6 @@ async function authenticateSocket (ws, data) {
       // DO NOT CLOSE SOCKET HERE.
       return false
     }
-
-    // ===================================================
-    // AUTHENTICATION SUCCESS
-    // ===================================================
 
     ws.userId = authenticatedUserId
 
@@ -505,10 +449,6 @@ async function authenticateSocket (ws, data) {
     return false
   }
 }
-
-// =====================================================
-// PREVIOUS MESSAGES
-// =====================================================
 
 function getPreviousMessages (ws, senderId, receiverId, isGroup) {
   if (!isSocketAuthenticated(ws)) {
@@ -653,10 +593,6 @@ function getPreviousMessages (ws, senderId, receiverId, isGroup) {
   })
 }
 
-// =====================================================
-// GET USER LIST
-// =====================================================
-
 function sendUserInfo (ws, masterId) {
   const senderId = Number(ws.userId)
 
@@ -667,10 +603,6 @@ function sendUserInfo (ws, masterId) {
   sendToClient(ws, {
     sendType: 'user_list_start'
   })
-
-  // ===================================================
-  // USERS
-  // ===================================================
 
   const userQuery = `
     SELECT
@@ -1729,7 +1661,12 @@ wss.on('connection', ws => {
 
           (err, result) => {
             if (err) {
-              console.error('Message insert error:', err)
+              console.error('Message insert error:')
+              console.error('Code:', err.code)
+              console.error('Errno:', err.errno)
+              console.error('SQL State:', err.sqlState)
+              console.error('Message:', err.sqlMessage)
+              console.error('SQL:', err.sql)
 
               sendToClient(ws, {
                 type: 'error',
