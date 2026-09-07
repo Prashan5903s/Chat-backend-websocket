@@ -1647,15 +1647,16 @@ wss.on('connection', ws => {
           query,
 
           [
-            0,
-            senderId,
-            receiverId,
-            imageUrl || null,
-            content,
-            data.master_id,
+            0, // type
+            senderId, // sender_id
+            receiverId, // reciever_id
+            0, // group_id
+            imageUrl || null, // image_url
+            content, // message_text
+            data.master_id, // master_id
             data.master_company_id,
-            senderId,
-            sentTime,
+            senderId, // created_by
+            sentTime, // sent_time
             0
           ],
 
