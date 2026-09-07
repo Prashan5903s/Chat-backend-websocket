@@ -1672,7 +1672,7 @@ wss.on('connection', ws => {
                 type: 'error',
                 sendType: 'message_error',
                 message: 'Failed to send message',
-                err
+                err: err
               })
 
               return
