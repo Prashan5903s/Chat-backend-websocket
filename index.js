@@ -1626,22 +1626,22 @@ wss.on('connection', ws => {
         // =================================================
 
         const query = `
-          INSERT INTO user_message
-          (
-            type,
-            sender_id,
-            reciever_id,
-            image_url,
-            message_text,
-            master_id,
-            master_company_id,
-            created_by,
-            sent_time,
-            is_read
-          )
-
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `
+                      INSERT INTO user_message
+                      (
+                          type,
+                          sender_id,
+                          reciever_id,
+                          group_id,
+                          image_url,
+                          message_text,
+                          master_id,
+                          master_company_id,
+                          created_by,
+                          sent_time,
+                          is_read
+                      )
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                      `
 
         db.query(
           query,
