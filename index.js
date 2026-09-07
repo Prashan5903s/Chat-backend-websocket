@@ -1453,9 +1453,9 @@ wss.on('connection', ws => {
 
         const imageUrl = data.image_url || null
 
-        const sentTime =
-          data.sent_time ||
-          moment().tz('America/Denver').format('YYYY-MM-DD HH:mm:ss Z')
+        const sentTime = data.sent_time
+          ? moment(data.sent_time).format('YYYY-MM-DD HH:mm:ss')
+          : moment().tz('America/Denver').format('YYYY-MM-DD HH:mm:ss')
 
         if (!receiverId) {
           sendToClient(ws, {
@@ -1661,7 +1661,6 @@ wss.on('connection', ws => {
 
           (err, result) => {
             if (err) {
-              
               console.error('============== MYSQL ERROR ==============')
               console.error(err)
               console.error('Code:', err.code)
