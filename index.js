@@ -293,16 +293,14 @@ async function checkAccessToken(token) {
 
 async function authenticateSocket(ws, data) {
   try {
+
     if (ws.authenticated === true) {
+
       sendToClient(ws, {
         type: 'success',
-
         sendType: 'auth_success',
-
         authenticated: true,
-
         user_id: ws.userId,
-
         message: 'WebSocket is already authenticated'
       })
 
@@ -312,17 +310,12 @@ async function authenticateSocket(ws, data) {
     const token = normalizeAccessToken(data?.token)
 
     if (!token) {
-      console.warn('[AUTH] Authentication request received without token')
 
       sendToClient(ws, {
         type: 'error',
-
         sendType: 'auth_failed',
-
         authenticated: false,
-
         statusCode: 401,
-
         message: 'Access token is required'
       })
 
@@ -330,38 +323,18 @@ async function authenticateSocket(ws, data) {
       ws.userId = null
       ws.accessToken = null
 
-      // IMPORTANT:
-      // DO NOT CLOSE THE WEBSOCKET.
-      //
-      // The client can remain connected and decide
-      // when/how to authenticate again.
       return false
     }
 
     const tokenResult = await checkAccessToken(token)
 
-    // IMPORTANT:
-    // Never print the actual access token.
-    console.log('[AUTH] Token validation result:', {
-      valid: tokenResult.valid,
-
-      statusCode: tokenResult.statusCode || null,
-
-      userId: tokenResult.userId || null,
-
-      message: tokenResult.message || null
-    })
-
     if (!tokenResult.valid) {
+
       sendToClient(ws, {
         type: 'error',
-
         sendType: 'auth_failed',
-
         authenticated: false,
-
         statusCode: tokenResult.statusCode || 401,
-
         message: tokenResult.message || 'Access token is invalid or expired'
       })
 
@@ -369,23 +342,18 @@ async function authenticateSocket(ws, data) {
       ws.userId = null
       ws.accessToken = null
 
-      // IMPORTANT:
-      // DO NOT CLOSE SOCKET HERE.
       return false
     }
 
     const authenticatedUserId = Number(tokenResult.userId)
 
     if (!authenticatedUserId) {
+
       sendToClient(ws, {
         type: 'error',
-
         sendType: 'auth_failed',
-
         authenticated: false,
-
         statusCode: 401,
-
         message: 'Unable to identify authenticated user'
       })
 
@@ -393,8 +361,6 @@ async function authenticateSocket(ws, data) {
       ws.userId = null
       ws.accessToken = null
 
-      // IMPORTANT:
-      // DO NOT CLOSE SOCKET HERE.
       return false
     }
 
@@ -408,19 +374,11 @@ async function authenticateSocket(ws, data) {
 
     sendToClient(ws, {
       type: 'success',
-
       sendType: 'auth_success',
-
       authenticated: true,
-
       user_id: ws.userId,
-
       message: 'Access token is valid and active'
     })
-
-    console.log(
-      `[AUTH] WebSocket authenticated successfully for user ${ws.userId}`
-    )
 
     return true
   } catch (error) {
