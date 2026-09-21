@@ -57,6 +57,18 @@ const wss = new WebSocket.Server({
 // DATETIME
 // =====================================================
 
+// Explicit, known-good formats.
+// Passing these (with strict = true) tells moment exactly how to parse
+// the string instead of letting it guess, which is what triggers the
+// "not in a recognized RFC2822 or ISO format" deprecation warning and
+// the unreliable fallback to the native js Date() constructor.
+const DATETIME_INPUT_FORMATS = [
+  moment.ISO_8601,        // 2026-09-21T06:20:58.000Z / 2026-09-21T00:20:58-06:00
+  'YYYY-MM-DD HH:mm:ss Z', // 2026-09-21 01:39:34 -06:00  (space before offset)
+  'YYYY-MM-DD HH:mm:ssZ',  // 2026-09-21 01:39:34-06:00   (no space before offset)
+  'YYYY-MM-DD HH:mm:ss'    // 2026-09-21 00:20:58         (no offset, treated as UTC)
+]
+
 function normalizeMySQLDateTime(value) {
   if (!value) {
     return moment.utc().format('YYYY-MM-DD HH:mm:ss')
@@ -74,9 +86,9 @@ function normalizeMySQLDateTime(value) {
     if (
       /(?:Z|[+-]\d{2}:?\d{2})$/i.test(input)
     ) {
-      parsed = moment.parseZone(input)
+      parsed = moment.parseZone(input, DATETIME_INPUT_FORMATS, true)
     } else {
-      parsed = moment.utc(input)
+      parsed = moment.utc(input, DATETIME_INPUT_FORMATS, true)
     }
   } catch (error) {
     parsed = null
@@ -347,19 +359,19 @@ async function checkAccessToken(token) {
 
     const backendUrl =
       String(
-        process.env.BACKEND_URL || ''
+        process.env.BACKENDURL || ''
       ).replace(/\/$/, '')
 
     if (!backendUrl) {
       console.error(
-        '[AUTH] BACKEND_URL is not configured'
+        '[AUTH] BACKENDURL is not configured'
       )
 
       return {
         valid: false,
         statusCode: 500,
         message:
-          'BACKEND_URL is not configured'
+          'BACKENDURL is not configured'
       }
     }
 
@@ -421,6 +433,15 @@ async function checkAccessToken(token) {
           normalizeId(userId)
       }
     }
+
+    console.error(
+      '[AUTH] Backend rejected token',
+      {
+        validationUrl,
+        status: response.status,
+        body: response.data
+      }
+    )
 
     return {
       valid: false,
@@ -1164,36 +1185,26 @@ function sendUserInfo(
       senderId
     ],
     (err, groups) => {
-      if (err) {
-        console.error(
-          'Group list error:',
-          err
-        )
 
+
+      console.log("Data of group list", senderId, groups);
+
+
+      if (err) {
+
+        console.error('Group list error:', err)
         return
       }
 
       groups.forEach(group => {
         sendToClient(ws, {
-          id:
-            group.group_id,
-
-          group_id:
-            group.group_id,
-
+          id: group.group_id,
+          group_id: group.group_id,
           type: 1,
-
-          group_name:
-            group.group_name,
-
-          created_by:
-            group.created_by,
-
-          created_at:
-            group.created_at,
-
-          sendType:
-            'group_list'
+          group_name: group.group_name,
+          created_by: group.created_by,
+          created_at: group.created_at,
+          sendType: 'group_list'
         })
       })
     }
@@ -1976,40 +1987,51 @@ wss.on(
             )
 
             if (type === 1) {
+
               const memberQuery = `
-                SELECT 1
-                FROM user_group
-                WHERE group_id = ?
-                  AND user_id = ?
-                  AND is_active = 1
-                LIMIT 1
-              `
+  SELECT 1
+  FROM groups g
+  LEFT JOIN user_group ug
+    ON g.group_id = ug.group_id
+    AND ug.user_id = ?
+    AND ug.is_active = 1
+  WHERE g.group_id = ?
+    AND (
+      g.created_by = ?
+      OR ug.user_id = ?
+    )
+  LIMIT 1
+`
 
               db.query(
                 memberQuery,
                 [
-                  receiverId,
-                  senderId
+                  senderId, // ug.user_id
+                  receiverId, // g.group_id
+                  senderId, // g.created_by
+                  senderId  // ug.user_id
                 ],
                 (
                   memberError,
                   members
                 ) => {
-                  if (
-                    memberError ||
-                    !members.length
-                  ) {
+
+                  console.log(
+                    "Group sender permission:",
+                    memberError,
+                    members,
+                    receiverId,
+                    senderId
+                  )
+
+                  if (memberError || !members.length) {
+
                     sendToClient(
                       ws,
                       {
-                        type:
-                          'error',
-
-                        sendType:
-                          'message_error',
-
-                        message:
-                          'You are not a member of this group'
+                        type: 'error',
+                        sendType: 'message_error',
+                        message: 'You are not a member of this group'
                       }
                     )
 
@@ -2017,45 +2039,32 @@ wss.on(
                   }
 
                   const query = `
-                    INSERT INTO user_message
-                    (
-                      type,
-                      sender_id,
-                      group_id,
-                      image_url,
-                      message_text,
-                      master_id,
-                      master_company_id,
-                      created_by,
-                      sent_time,
-                      is_read
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                  `
+      INSERT INTO user_message
+      (
+        type,
+        sender_id,
+        group_id,
+        image_url,
+        message_text,
+        master_id,
+        master_company_id,
+        created_by,
+        sent_time,
+        is_read
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
 
                   const values = [
                     1,
-
                     senderId,
-
                     receiverId,
-
                     imageUrl,
-
                     content,
-
-                    normalizeId(
-                      data.master_id
-                    ) || null,
-
-                    normalizeId(
-                      data.master_company_id
-                    ) || null,
-
+                    normalizeId(data.master_id) || null,
+                    normalizeId(data.master_company_id) || null,
                     senderId,
-
                     mysqlSentTime,
-
                     0
                   ]
 
@@ -2071,7 +2080,9 @@ wss.on(
                       err,
                       result
                     ) => {
+
                       if (err) {
+
                         console.error(
                           'Group message insert error:',
                           err
@@ -2080,12 +2091,8 @@ wss.on(
                         sendToClient(
                           ws,
                           {
-                            type:
-                              'error',
-
-                            sendType:
-                              'message_error',
-
+                            type: 'error',
+                            sendType: 'message_error',
                             message:
                               err.sqlMessage ||
                               'Failed to send group message'
@@ -2098,53 +2105,44 @@ wss.on(
                       getUserName(
                         senderId,
                         sender => {
-                          const messageData =
-                          {
-                            id:
-                              result.insertId,
+
+                          const messageData = {
+                            id: result.insertId,
 
                             type: 1,
 
-                            sendType:
-                              'new_message',
+                            sendType: 'new_message',
 
-                            sender_id:
-                              senderId,
+                            sender_id: senderId,
 
-                            receiver_id:
-                              receiverId,
+                            receiver_id: receiverId,
 
-                            reciever_id:
-                              receiverId,
+                            reciever_id: receiverId,
 
-                            group_id:
-                              receiverId,
+                            group_id: receiverId,
 
                             sender_name:
                               sender?.name ||
                               'Unknown',
 
-                            receiver_name:
-                              null,
+                            receiver_name: null,
 
-                            reciever_name:
-                              null,
+                            reciever_name: null,
 
                             content,
 
                             image_url:
-                              imageUrl ||
-                              null,
+                              imageUrl || null,
 
                             sent_time:
                               responseSentTime,
 
-                            sender:
-                              senderId
+                            sender: senderId
                           }
 
                           wss.clients.forEach(
                             client => {
+
                               if (
                                 !isSocketAuthenticated(
                                   client
@@ -2158,10 +2156,13 @@ wss.on(
                                   client.userId
                                 )
 
+                              // Always send the message
+                              // back to the sender
                               if (
                                 clientUserId ===
                                 senderId
                               ) {
+
                                 sendToClient(
                                   client,
                                   messageData
@@ -2170,20 +2171,26 @@ wss.on(
                                 return
                               }
 
+                              // Check whether receiver is
+                              // group creator OR active member
                               db.query(
                                 memberQuery,
                                 [
+                                  clientUserId,
                                   receiverId,
+                                  clientUserId,
                                   clientUserId
                                 ],
                                 (
                                   memberError,
                                   members
                                 ) => {
+
                                   if (
                                     !memberError &&
                                     members.length
                                   ) {
+
                                     sendToClient(
                                       client,
                                       messageData
@@ -2804,7 +2811,7 @@ server.listen(
     )
 
     console.log(
-      `[CONFIG] BACKEND_URL = ${process.env.BACKEND_URL || '(missing)'}`
+      `[CONFIG] BACKENDURL = ${process.env.BACKENDURL || '(missing)'}`
     )
 
     console.log(
