@@ -567,7 +567,7 @@ function getPreviousMessages(ws, senderId, receiverId, isGroup) {
 
         image_url: msg.image_url || null,
 
-        sent_time: msg.sent_time,
+        sent_time: moment(msg.sent_time).toISOString(),
 
         is_read: msg.is_read,
 
@@ -894,7 +894,7 @@ function sendTotalUnreadMessages(ws) {
 
         image_url: msg.image_url || null,
 
-        sent_time: msg.sent_time,
+        sent_time: moment(msg.sent_time).toISOString(),
 
         is_read: msg.is_read,
 
@@ -990,7 +990,7 @@ function sendTotalUnreadMessages(ws) {
 
         image_url: msg.image_url || null,
 
-        sent_time: msg.sent_time,
+        sent_time: moment(msg.sent_time).toISOString(),
 
         is_read: msg.is_read,
 
@@ -1438,6 +1438,7 @@ wss.on('connection', ws => {
       // =================================================
 
       if (data.sendType === 'message') {
+
         const senderId = authenticatedUserId
 
         const type = Number(data.type) === 1 ? 1 : 0
@@ -1447,10 +1448,6 @@ wss.on('connection', ws => {
         const content = data.content || ''
 
         const imageUrl = data.image_url || null
-
-        // const sentTime = data.sent_time
-        //   ? moment(data.sent_time).format('YYYY-MM-DD HH:mm:ss')
-        //   : moment().tz('America/Denver').format('YYYY-MM-DD HH:mm:ss')
 
         if (!receiverId) {
           sendToClient(ws, {
@@ -1469,27 +1466,22 @@ wss.on('connection', ws => {
         // =================================================
 
         if (type === 1) {
+
           const memberQuery = `
             SELECT 1
-
             FROM user_group
-
             WHERE
               group_id = ?
-
               AND user_id = ?
-
               AND is_active = 1
-
             LIMIT 1
           `
 
           db.query(
             memberQuery,
-
             [receiverId, senderId],
-
             (memberError, members) => {
+
               if (memberError || !members.length) {
                 sendToClient(ws, {
                   type: 'error',
@@ -1532,7 +1524,7 @@ wss.on('connection', ws => {
                   data.master_id,
                   data.master_company_id,
                   senderId,
-                  data?.sent_time,
+                  data.sent_time,
                   0
                 ],
 
@@ -1550,33 +1542,21 @@ wss.on('connection', ws => {
                   }
 
                   getUserName(senderId, sender => {
+
                     const messageData = {
                       id: result.insertId,
-
                       type: 1,
-
                       sendType: 'new_message',
-
                       sender_id: senderId,
-
                       receiver_id: receiverId,
-
                       reciever_id: receiverId,
-
                       group_id: receiverId,
-
                       sender_name: sender?.name || 'Unknown',
-
                       receiver_name: null,
-
                       reciever_name: null,
-
                       content,
-
                       image_url: imageUrl || null,
-
-                      sent_time: data?.sent_time,
-
+                      sent_time: moment(data.sent_time).toISOString(),
                       sender: senderId
                     }
 
@@ -1676,31 +1656,18 @@ wss.on('connection', ws => {
               getUserName(receiverId, receiver => {
                 const messageData = {
                   id: result.insertId,
-
                   type: 0,
-
                   sendType: 'new_message',
-
                   sender_id: senderId,
-
                   receiver_id: receiverId,
-
                   reciever_id: receiverId,
-
                   group_id: 0,
-
                   sender_name: sender?.name || 'Unknown',
-
                   receiver_name: receiver?.name || 'Unknown',
-
                   reciever_name: receiver?.name || 'Unknown',
-
                   content,
-
                   image_url: imageUrl || null,
-
-                  sent_time: data.sent_time,
-
+                  sent_time: moment(data.sent_time).toISOString(),
                   sender: senderId
                 }
 
