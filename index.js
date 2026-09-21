@@ -40,9 +40,98 @@ db.getConnection((err, connection) => {
   connection.release()
 })
 
+// =====================================================
+// WEBSOCKET
+// =====================================================
+
 const wss = new WebSocket.Server({
   noServer: true
 })
+
+// =====================================================
+// DATETIME HELPERS
+// =====================================================
+
+/**
+ * Convert any valid client datetime to UTC MySQL DATETIME.
+ *
+ * Example:
+ *
+ * 2026-09-21 00:20:58 -06:00
+ *
+ * becomes:
+ *
+ * 2026-09-21 06:20:58
+ *
+ * MySQL DATETIME does NOT accept timezone offsets.
+ */
+function toMySQLDateTimeUTC(value) {
+  if (!value) {
+    return moment.utc().format('YYYY-MM-DD HH:mm:ss')
+  }
+
+  const stringValue = String(value).trim()
+
+  if (!stringValue) {
+    return moment.utc().format('YYYY-MM-DD HH:mm:ss')
+  }
+
+  let parsed
+
+  // If the value contains timezone information,
+  // parseZone preserves the supplied offset.
+  if (
+    /([zZ]|[+-]\d{2}:?\d{2})$/.test(stringValue)
+  ) {
+    parsed = moment.parseZone(stringValue)
+  } else {
+    // For timezone-less values, treat them as UTC.
+    parsed = moment.utc(stringValue)
+  }
+
+  if (!parsed.isValid()) {
+    console.warn(
+      '[DATETIME] Invalid sent_time received:',
+      value
+    )
+
+    return moment.utc().format('YYYY-MM-DD HH:mm:ss')
+  }
+
+  return parsed
+    .utc()
+    .format('YYYY-MM-DD HH:mm:ss')
+}
+
+/**
+ * Convert MySQL DATETIME into ISO UTC string
+ * for the frontend.
+ *
+ * Example:
+ *
+ * MySQL:
+ * 2026-09-21 06:20:58
+ *
+ * Response:
+ * 2026-09-21T06:20:58.000Z
+ */
+function toISOStringUTC(value) {
+  if (!value) {
+    return null
+  }
+
+  const parsed = moment.utc(value)
+
+  if (!parsed.isValid()) {
+    return null
+  }
+
+  return parsed.toISOString()
+}
+
+// =====================================================
+// SOCKET HELPERS
+// =====================================================
 
 function sendToClient(ws, data) {
   try {
@@ -55,7 +144,6 @@ function sendToClient(ws, data) {
     return true
   } catch (error) {
     console.error('sendToClient error:', error)
-
     return false
   }
 }
@@ -72,7 +160,6 @@ function sendToUser(userId, data) {
       Number(client.userId) === targetUserId
     ) {
       sendToClient(client, data)
-
       sent = true
     }
   })
@@ -80,7 +167,10 @@ function sendToUser(userId, data) {
   return sent
 }
 
-function closeUserSockets(userId, reason = 'Session expired') {
+function closeUserSockets(
+  userId,
+  reason = 'Session expired'
+) {
   const targetUserId = Number(userId)
 
   let closed = false
@@ -99,8 +189,6 @@ function closeUserSockets(userId, reason = 'Session expired') {
       })
 
       client.authenticated = false
-
-      // client.close(1008, reason)
 
       closed = true
     }
@@ -124,7 +212,8 @@ function requireAuthentication(ws) {
       type: 'error',
       sendType: 'auth_required',
       authenticated: false,
-      message: 'Please authenticate WebSocket connection first'
+      message:
+        'Please authenticate WebSocket connection first'
     })
 
     return false
@@ -133,29 +222,30 @@ function requireAuthentication(ws) {
   return true
 }
 
+// =====================================================
+// USER NAME
+// =====================================================
+
 function getUserName(userId, callback) {
   const query = `
-    SELECT
-      id,
-      first_name,
-      last_name
+SELECT
+id,
+  first_name,
+  last_name
     FROM users
     WHERE id = ?
-    LIMIT 1
+  LIMIT 1
   `
 
   db.query(query, [userId], (err, results) => {
     if (err) {
       console.error('getUserName error:', err)
-
       callback(null)
-
       return
     }
 
     if (!results.length) {
       callback(null)
-
       return
     }
 
@@ -163,15 +253,17 @@ function getUserName(userId, callback) {
 
     callback({
       id: user.id,
-
       first_name: user.first_name || '',
-
       last_name: user.last_name || '',
-
-      name: `${user.first_name || ''} ${user.last_name || ''}`.trim()
+      name: `${user.first_name || ''} ${user.last_name || ''
+        } `.trim()
     })
   })
 }
+
+// =====================================================
+// ACCESS TOKEN
+// =====================================================
 
 function normalizeAccessToken(token) {
   return String(token || '')
@@ -191,10 +283,14 @@ async function checkAccessToken(token) {
       }
     }
 
-    const backendUrl = String(process.env.BACKEND_URL || '').replace(/\/$/, '')
+    const backendUrl = String(
+      process.env.BACKEND_URL || ''
+    ).replace(/\/$/, '')
 
     if (!backendUrl) {
-      console.error('[AUTH] BACKEND_URL is not configured')
+      console.error(
+        '[AUTH] BACKEND_URL is not configured'
+      )
 
       return {
         valid: false,
@@ -203,13 +299,17 @@ async function checkAccessToken(token) {
       }
     }
 
-    const validationUrl = `${backendUrl}/check/user/access/token`
+    const validationUrl =
+      `${backendUrl} /check/user / access / token`
 
     console.log('----------------------------------------')
     console.log('[AUTH] Validating access token')
     console.log('[AUTH] Validation URL:', validationUrl)
     console.log('[AUTH] Token present:', true)
-    console.log('[AUTH] Token length:', normalizedToken.length)
+    console.log(
+      '[AUTH] Token length:',
+      normalizedToken.length
+    )
     console.log('----------------------------------------')
 
     const response = await axios.post(
@@ -217,26 +317,22 @@ async function checkAccessToken(token) {
       {},
       {
         headers: {
-          Authorization: `Bearer ${normalizedToken}`,
+          Authorization:
+            `Bearer ${normalizedToken} `,
           Accept: 'application/json',
           'Content-Type': 'application/json'
         },
 
         timeout: 10000,
 
-        // IMPORTANT:
-        // Allow axios to return 401 instead of throwing.
         validateStatus: () => true
       }
     )
 
-    console.log('[AUTH] Laravel status:', response.status)
-
-    console.log('[AUTH] Laravel success:', response.data?.success)
-
-    console.log('[AUTH] Laravel message:', response.data?.message)
-
-    if (response.status === 200 && response.data?.success === true) {
+    if (
+      response.status === 200 &&
+      response.data?.success === true
+    ) {
       const userId =
         response.data?.data?.user_id ??
         response.data?.data?.id ??
@@ -251,7 +347,8 @@ async function checkAccessToken(token) {
         return {
           valid: false,
           statusCode: 200,
-          message: 'Token is valid but Laravel did not return a user ID'
+          message:
+            'Token is valid but Laravel did not return a user ID'
         }
       }
 
@@ -264,25 +361,15 @@ async function checkAccessToken(token) {
 
     return {
       valid: false,
-
       statusCode: response.status,
-
       message:
         response.data?.message ||
-        `Access token validation failed with status ${response.status}`
+        `Access token validation failed with status ${response.status} `
     }
   } catch (error) {
-    console.error('[AUTH] Token validation request failed:', error.message)
-
-    console.error('[AUTH] HTTP status:', error.response?.status || null)
-
-    console.error('[AUTH] Laravel response:', error.response?.data || null)
-
     return {
       valid: false,
-
       statusCode: error.response?.status || 500,
-
       message:
         error.response?.data?.message ||
         error.message ||
@@ -291,17 +378,20 @@ async function checkAccessToken(token) {
   }
 }
 
+// =====================================================
+// SOCKET AUTHENTICATION
+// =====================================================
+
 async function authenticateSocket(ws, data) {
   try {
-
     if (ws.authenticated === true) {
-
       sendToClient(ws, {
         type: 'success',
         sendType: 'auth_success',
         authenticated: true,
         user_id: ws.userId,
-        message: 'WebSocket is already authenticated'
+        message:
+          'WebSocket is already authenticated'
       })
 
       return true
@@ -310,7 +400,6 @@ async function authenticateSocket(ws, data) {
     const token = normalizeAccessToken(data?.token)
 
     if (!token) {
-
       sendToClient(ws, {
         type: 'error',
         sendType: 'auth_failed',
@@ -326,16 +415,19 @@ async function authenticateSocket(ws, data) {
       return false
     }
 
-    const tokenResult = await checkAccessToken(token)
+    const tokenResult =
+      await checkAccessToken(token)
 
     if (!tokenResult.valid) {
-
       sendToClient(ws, {
         type: 'error',
         sendType: 'auth_failed',
         authenticated: false,
-        statusCode: tokenResult.statusCode || 401,
-        message: tokenResult.message || 'Access token is invalid or expired'
+        statusCode:
+          tokenResult.statusCode || 401,
+        message:
+          tokenResult.message ||
+          'Access token is invalid or expired'
       })
 
       ws.authenticated = false
@@ -345,16 +437,17 @@ async function authenticateSocket(ws, data) {
       return false
     }
 
-    const authenticatedUserId = Number(tokenResult.userId)
+    const authenticatedUserId =
+      Number(tokenResult.userId)
 
     if (!authenticatedUserId) {
-
       sendToClient(ws, {
         type: 'error',
         sendType: 'auth_failed',
         authenticated: false,
         statusCode: 401,
-        message: 'Unable to identify authenticated user'
+        message:
+          'Unable to identify authenticated user'
       })
 
       ws.authenticated = false
@@ -365,11 +458,8 @@ async function authenticateSocket(ws, data) {
     }
 
     ws.userId = authenticatedUserId
-
     ws.accessToken = token
-
     ws.authenticated = true
-
     ws.authenticatedAt = new Date()
 
     sendToClient(ws, {
@@ -377,177 +467,186 @@ async function authenticateSocket(ws, data) {
       sendType: 'auth_success',
       authenticated: true,
       user_id: ws.userId,
-      message: 'Access token is valid and active'
+      message:
+        'Access token is valid and active'
     })
 
     return true
   } catch (error) {
-    console.error('[AUTH] authenticateSocket error:', error)
+    console.error(
+      '[AUTH] authenticateSocket error:',
+      error
+    )
 
     ws.authenticated = false
-
     ws.userId = null
-
     ws.accessToken = null
 
     sendToClient(ws, {
       type: 'error',
-
       sendType: 'auth_failed',
-
       authenticated: false,
-
       statusCode: 500,
-
       message: 'Authentication failed'
     })
 
-    // IMPORTANT:
-    // DO NOT CLOSE SOCKET HERE.
     return false
   }
 }
 
-function getPreviousMessages(ws, senderId, receiverId, isGroup) {
+// =====================================================
+// PREVIOUS MESSAGES
+// =====================================================
+
+function getPreviousMessages(
+  ws,
+  senderId,
+  receiverId,
+  isGroup
+) {
   if (!isSocketAuthenticated(ws)) {
     return
   }
 
   let query
-
   let params
 
   if (isGroup) {
     query = `
-      SELECT
-        um.*,
-
-        u1.first_name AS sender_first_name,
-        u1.last_name AS sender_last_name
-
+SELECT
+um.*,
+  u1.first_name AS sender_first_name,
+    u1.last_name AS sender_last_name
       FROM user_message um
-
       LEFT JOIN users u1
         ON um.sender_id = u1.id
-
-      WHERE
-        um.type = 1
+WHERE
+um.type = 1
         AND um.group_id = ?
-
-      ORDER BY um.sent_time ASC
+  ORDER BY um.sent_time ASC
     `
 
     params = [receiverId]
   } else {
     query = `
-      SELECT
-        um.*,
-
-        u1.first_name AS sender_first_name,
-        u1.last_name AS sender_last_name,
-
-        u2.first_name AS receiver_first_name,
+SELECT
+um.*,
+  u1.first_name AS sender_first_name,
+    u1.last_name AS sender_last_name,
+      u2.first_name AS receiver_first_name,
         u2.last_name AS receiver_last_name
-
       FROM user_message um
-
       LEFT JOIN users u1
         ON um.sender_id = u1.id
-
       LEFT JOIN users u2
         ON um.reciever_id = u2.id
-
-      WHERE
-        um.type = 0
-        AND
-        (
-          (
-            um.sender_id = ?
-            AND um.reciever_id = ?
+WHERE
+um.type = 0
+AND
+  (
+    (
+      um.sender_id = ?
+        AND um.reciever_id = ?
           )
-          OR
-          (
-            um.sender_id = ?
-            AND um.reciever_id = ?
+OR
+  (
+    um.sender_id = ?
+      AND um.reciever_id = ?
           )
         )
-
       ORDER BY um.sent_time ASC
     `
 
-    params = [senderId, receiverId, receiverId, senderId]
+    params = [
+      senderId,
+      receiverId,
+      receiverId,
+      senderId
+    ]
   }
 
-  db.query(query, params, (err, results) => {
-    if (err) {
-      console.error('Error fetching previous messages:', err)
+  db.query(
+    query,
+    params,
+    (err, results) => {
+      if (err) {
+        console.error(
+          'Error fetching previous messages:',
+          err
+        )
 
-      sendToClient(ws, {
-        type: 'error',
+        sendToClient(ws, {
+          type: 'error',
+          sendType: 'previous_message_error',
+          message:
+            'Failed to load previous messages'
+        })
 
-        sendType: 'previous_message_error',
+        return
+      }
 
-        message: 'Failed to load previous messages'
+      results.forEach(msg => {
+        const senderName =
+          `${msg.sender_first_name || 'Unknown'} ${msg.sender_last_name || ''
+            } `.trim()
+
+        const receiverName =
+          `${msg.receiver_first_name || 'Unknown'} ${msg.receiver_last_name || ''
+            } `.trim()
+
+        sendToClient(ws, {
+          id: msg.id,
+          type: Number(msg.type),
+          sendType: 'previous_message',
+
+          sender_id: Number(msg.sender_id),
+
+          receiver_id:
+            Number(msg.reciever_id || 0),
+
+          reciever_id:
+            Number(msg.reciever_id || 0),
+
+          group_id:
+            Number(msg.group_id || 0),
+
+          sender_name: senderName,
+          receiver_name: receiverName,
+          reciever_name: receiverName,
+
+          content: msg.message_text,
+
+          image_url:
+            msg.image_url || null,
+
+          // IMPORTANT:
+          // Always return UTC ISO.
+          sent_time:
+            toISOStringUTC(msg.sent_time),
+
+          is_read: msg.is_read,
+
+          sender:
+            Number(msg.sender_id)
+        })
       })
 
-      return
+      sendToClient(ws, {
+        type: 'success',
+        sendType: 'previous_messages_loaded',
+        receiver_id: receiverId,
+        group_id:
+          isGroup ? receiverId : 0,
+        isGroup,
+        total: results.length
+      })
     }
-
-    results.forEach(msg => {
-      const senderName = `${msg.sender_first_name || 'Unknown'} ${msg.sender_last_name || ''
-        }`.trim()
-
-      const receiverName = `${msg.receiver_first_name || 'Unknown'} ${msg.receiver_last_name || ''
-        }`.trim()
-
-      sendToClient(ws, {
-        id: msg.id,
-
-        type: Number(msg.type),
-
-        sendType: 'previous_message',
-
-        sender_id: Number(msg.sender_id),
-
-        receiver_id: Number(msg.reciever_id || 0),
-
-        reciever_id: Number(msg.reciever_id || 0),
-
-        group_id: Number(msg.group_id || 0),
-
-        sender_name: senderName,
-
-        receiver_name: receiverName,
-
-        reciever_name: receiverName,
-
-        content: msg.message_text,
-
-        image_url: msg.image_url || null,
-
-        sent_time: moment(msg.sent_time).toISOString(),
-
-        is_read: msg.is_read,
-
-        sender: Number(msg.sender_id)
-      })
-    })
-
-    sendToClient(ws, {
-      type: 'success',
-
-      sendType: 'previous_messages_loaded',
-
-      receiver_id: receiverId,
-
-      group_id: isGroup ? receiverId : 0,
-
-      isGroup,
-
-      total: results.length
-    })
-  })
+  )
 }
+
+// =====================================================
+// USER INFO
+// =====================================================
 
 function sendUserInfo(ws, masterId) {
   const senderId = Number(ws.userId)
@@ -561,148 +660,137 @@ function sendUserInfo(ws, masterId) {
   })
 
   const userQuery = `
-    SELECT
-      id,
-      first_name,
-      last_name,
-      email,
-      created_at,
-      avatar_image
-
+SELECT
+id,
+  first_name,
+  last_name,
+  email,
+  created_at,
+  avatar_image
     FROM users
-
     WHERE master_id = ?
+  ORDER BY created_at ASC
+    `
 
-    ORDER BY created_at ASC
-  `
+  db.query(
+    userQuery,
+    [senderId],
+    (err, users) => {
+      if (err) {
+        console.error(
+          'User list error:',
+          err
+        )
 
-  db.query(userQuery, [senderId], (err, users) => {
-    if (err) {
-      console.error('User list error:', err)
+        return
+      }
 
-      return
-    }
-
-    users.forEach(user => {
-      sendToClient(ws, {
-        id: user.id,
-
-        first_name: user.first_name,
-
-        last_name: user.last_name,
-
-        email: user.email,
-
-        type: 0,
-
-        created_at: user.created_at,
-
-        image_url: user.avatar_image,
-
-        sendType: 'user_list'
+      users.forEach(user => {
+        sendToClient(ws, {
+          id: user.id,
+          first_name: user.first_name,
+          last_name: user.last_name,
+          email: user.email,
+          type: 0,
+          created_at: user.created_at,
+          image_url: user.avatar_image,
+          sendType: 'user_list'
+        })
       })
-    })
-  })
+    }
+  )
 
   // ===================================================
   // DRIVERS
   // ===================================================
 
   const driverQuery = `
-    SELECT
-      id,
-      first_name,
-      last_name,
-      email,
-      created_at,
-      avatar_image
-
+SELECT
+id,
+  first_name,
+  last_name,
+  email,
+  created_at,
+  avatar_image
     FROM users
-
     WHERE master_id = ?
-
-    AND id != ?
-
+  AND id != ?
     ORDER BY created_at ASC
-  `
+      `
 
-  db.query(driverQuery, [masterId, senderId], (err, drivers) => {
-    if (err) {
-      console.error('Driver list error:', err)
+  db.query(
+    driverQuery,
+    [masterId, senderId],
+    (err, drivers) => {
+      if (err) {
+        console.error(
+          'Driver list error:',
+          err
+        )
 
-      return
-    }
+        return
+      }
 
-    drivers.forEach(user => {
-      sendToClient(ws, {
-        id: user.id,
-
-        first_name: user.first_name,
-
-        last_name: user.last_name,
-
-        email: user.email,
-
-        type: 0,
-
-        created_at: user.created_at,
-
-        image_url: user.avatar_image,
-
-        sendType: 'driver_list'
+      drivers.forEach(user => {
+        sendToClient(ws, {
+          id: user.id,
+          first_name: user.first_name,
+          last_name: user.last_name,
+          email: user.email,
+          type: 0,
+          created_at: user.created_at,
+          image_url: user.avatar_image,
+          sendType: 'driver_list'
+        })
       })
-    })
-  })
+    }
+  )
 
   // ===================================================
   // MASTER
   // ===================================================
 
   const masterQuery = `
-    SELECT
-      id,
-      first_name,
-      last_name,
-      email,
-      created_at,
-      avatar_image
-
+SELECT
+id,
+  first_name,
+  last_name,
+  email,
+  created_at,
+  avatar_image
     FROM users
-
     WHERE id = ?
-
-    AND user_type = 'TR'
-
+  AND user_type = 'TR'
     LIMIT 1
   `
 
-  db.query(masterQuery, [masterId], (err, masters) => {
-    if (err) {
-      console.error('Master list error:', err)
+  db.query(
+    masterQuery,
+    [masterId],
+    (err, masters) => {
+      if (err) {
+        console.error(
+          'Master list error:',
+          err
+        )
 
-      return
-    }
+        return
+      }
 
-    masters.forEach(user => {
-      sendToClient(ws, {
-        id: user.id,
-
-        first_name: user.first_name,
-
-        last_name: user.last_name,
-
-        email: user.email,
-
-        type: 0,
-
-        created_at: user.created_at,
-
-        image_url: user.avatar_image,
-
-        sendType: 'master_list'
+      masters.forEach(user => {
+        sendToClient(ws, {
+          id: user.id,
+          first_name: user.first_name,
+          last_name: user.last_name,
+          email: user.email,
+          type: 0,
+          created_at: user.created_at,
+          image_url: user.avatar_image,
+          sendType: 'master_list'
+        })
       })
-    })
-  })
+    }
+  )
 
   // ===================================================
   // GROUPS
@@ -710,49 +798,45 @@ function sendUserInfo(ws, masterId) {
 
   const groupQuery = `
     SELECT DISTINCT
-      g.group_id,
-      g.group_name,
-      g.created_by,
-      g.created_at
-
+g.group_id,
+  g.group_name,
+  g.created_by,
+  g.created_at
     FROM groups g
-
     LEFT JOIN user_group ug
       ON g.group_id = ug.group_id
-
-    WHERE
-      g.created_by = ?
-
-      OR ug.user_id = ?
-
+WHERE
+g.created_by = ?
+  OR ug.user_id = ?
     ORDER BY g.group_id DESC
-  `
+      `
 
-  db.query(groupQuery, [senderId, senderId], (err, groups) => {
-    if (err) {
-      console.error('Group list error:', err)
+  db.query(
+    groupQuery,
+    [senderId, senderId],
+    (err, groups) => {
+      if (err) {
+        console.error(
+          'Group list error:',
+          err
+        )
 
-      return
-    }
+        return
+      }
 
-    groups.forEach(group => {
-      sendToClient(ws, {
-        id: group.group_id,
-
-        group_id: group.group_id,
-
-        type: 1,
-
-        group_name: group.group_name,
-
-        created_by: group.created_by,
-
-        created_at: group.created_at,
-
-        sendType: 'group_list'
+      groups.forEach(group => {
+        sendToClient(ws, {
+          id: group.group_id,
+          group_id: group.group_id,
+          type: 1,
+          group_name: group.group_name,
+          created_by: group.created_by,
+          created_at: group.created_at,
+          sendType: 'group_list'
+        })
       })
-    })
-  })
+    }
+  )
 }
 
 // =====================================================
@@ -771,212 +855,221 @@ function sendTotalUnreadMessages(ws) {
   }
 
   // ===================================================
-  // ONE-TO-ONE UNREAD
+  // ONE TO ONE
   // ===================================================
 
   const oneToOneQuery = `
-    SELECT
-      um.*,
-
-      u1.first_name AS sender_first_name,
-      u1.last_name AS sender_last_name,
-
+SELECT
+um.*,
+  u1.first_name AS sender_first_name,
+    u1.last_name AS sender_last_name,
       u2.first_name AS receiver_first_name,
-      u2.last_name AS receiver_last_name
-
+        u2.last_name AS receiver_last_name
     FROM user_message um
-
     LEFT JOIN users u1
       ON um.sender_id = u1.id
-
     LEFT JOIN users u2
       ON um.reciever_id = u2.id
-
-    WHERE
-      um.type = 0
-
+WHERE
+um.type = 0
       AND um.reciever_id = ?
-
-      AND (
-        um.is_read = 0
+  AND(
+    um.is_read = 0
         OR um.is_read IS NULL
-      )
-
+  )
     ORDER BY um.sent_time ASC
   `
 
-  db.query(oneToOneQuery, [userId], (err, messages) => {
-    if (err) {
-      console.error('Unread one-to-one messages error:', err)
+  db.query(
+    oneToOneQuery,
+    [userId],
+    (err, messages) => {
+      if (err) {
+        console.error(
+          'Unread one-to-one messages error:',
+          err
+        )
 
-      sendToClient(ws, {
-        type: 'error',
+        sendToClient(ws, {
+          type: 'error',
+          sendType: 'total_message_error',
+          message:
+            'Failed to load unread messages'
+        })
 
-        sendType: 'total_message_error',
+        return
+      }
 
-        message: 'Failed to load unread messages'
+      messages.forEach(msg => {
+        const senderName =
+          `${msg.sender_first_name || ''} ${msg.sender_last_name || ''
+            } `.trim()
+
+        const receiverName =
+          `${msg.receiver_first_name || ''} ${msg.receiver_last_name || ''
+            } `.trim()
+
+        sendToClient(ws, {
+          id: msg.id,
+          type: 0,
+          sendType: 'totalMsg',
+
+          sender_id:
+            Number(msg.sender_id),
+
+          receiver_id:
+            Number(msg.reciever_id || 0),
+
+          reciever_id:
+            Number(msg.reciever_id || 0),
+
+          group_id: 0,
+
+          sender_name:
+            senderName || 'Unknown',
+
+          receiver_name:
+            receiverName || 'Unknown',
+
+          reciever_name:
+            receiverName || 'Unknown',
+
+          content: msg.message_text,
+
+          image_url:
+            msg.image_url || null,
+
+          sent_time:
+            toISOStringUTC(msg.sent_time),
+
+          is_read: msg.is_read,
+
+          sender:
+            Number(msg.sender_id)
+        })
       })
-
-      return
     }
-
-    messages.forEach(msg => {
-      const senderName = `${msg.sender_first_name || ''} ${msg.sender_last_name || ''
-        }`.trim()
-
-      const receiverName = `${msg.receiver_first_name || ''} ${msg.receiver_last_name || ''
-        }`.trim()
-
-      sendToClient(ws, {
-        id: msg.id,
-
-        type: 0,
-
-        sendType: 'totalMsg',
-
-        sender_id: Number(msg.sender_id),
-
-        receiver_id: Number(msg.reciever_id || 0),
-
-        reciever_id: Number(msg.reciever_id || 0),
-
-        group_id: 0,
-
-        sender_name: senderName || 'Unknown',
-
-        receiver_name: receiverName || 'Unknown',
-
-        reciever_name: receiverName || 'Unknown',
-
-        content: msg.message_text,
-
-        image_url: msg.image_url || null,
-
-        sent_time: moment(msg.sent_time).toISOString(),
-
-        is_read: msg.is_read,
-
-        sender: Number(msg.sender_id)
-      })
-    })
-  })
+  )
 
   // ===================================================
-  // GROUP UNREAD
+  // GROUP
   // ===================================================
 
   const groupQuery = `
     SELECT DISTINCT
-      um.*,
-
-      u1.first_name AS sender_first_name,
-      u1.last_name AS sender_last_name,
-
+um.*,
+  u1.first_name AS sender_first_name,
+    u1.last_name AS sender_last_name,
       g.group_name
-
     FROM user_message um
-
     INNER JOIN user_group ug
       ON um.group_id = ug.group_id
-
     LEFT JOIN users u1
       ON um.sender_id = u1.id
-
     LEFT JOIN groups g
       ON um.group_id = g.group_id
-
-    WHERE
-      um.type = 1
-
+WHERE
+um.type = 1
       AND ug.user_id = ?
-
-      AND ug.is_active = 1
-
+  AND ug.is_active = 1
       AND um.sender_id != ?
-
-      AND (
-        um.is_read = 0
+  AND(
+    um.is_read = 0
         OR um.is_read IS NULL
-      )
-
+  )
     ORDER BY um.sent_time ASC
   `
 
-  db.query(groupQuery, [userId, userId], (err, messages) => {
-    if (err) {
-      console.error('Unread group messages error:', err)
+  db.query(
+    groupQuery,
+    [userId, userId],
+    (err, messages) => {
+      if (err) {
+        console.error(
+          'Unread group messages error:',
+          err
+        )
 
-      sendToClient(ws, {
-        type: 'error',
+        sendToClient(ws, {
+          type: 'error',
+          sendType: 'total_message_error',
+          message:
+            'Failed to load unread group messages'
+        })
 
-        sendType: 'total_message_error',
+        return
+      }
 
-        message: 'Failed to load unread group messages'
+      messages.forEach(msg => {
+        const senderName =
+          `${msg.sender_first_name || ''} ${msg.sender_last_name || ''
+            } `.trim()
+
+        sendToClient(ws, {
+          id: msg.id,
+          type: 1,
+          sendType: 'totalMsg',
+
+          sender_id:
+            Number(msg.sender_id),
+
+          receiver_id:
+            Number(msg.group_id),
+
+          reciever_id:
+            Number(msg.group_id),
+
+          group_id:
+            Number(msg.group_id),
+
+          group_name:
+            msg.group_name || '',
+
+          sender_name:
+            senderName || 'Unknown',
+
+          receiver_name: null,
+          reciever_name: null,
+
+          content: msg.message_text,
+
+          image_url:
+            msg.image_url || null,
+
+          sent_time:
+            toISOStringUTC(msg.sent_time),
+
+          is_read: msg.is_read,
+
+          sender:
+            Number(msg.sender_id)
+        })
       })
-
-      return
     }
-
-    messages.forEach(msg => {
-      const senderName = `${msg.sender_first_name || ''} ${msg.sender_last_name || ''
-        }`.trim()
-
-      sendToClient(ws, {
-        id: msg.id,
-
-        type: 1,
-
-        sendType: 'totalMsg',
-
-        sender_id: Number(msg.sender_id),
-
-        receiver_id: Number(msg.group_id),
-
-        reciever_id: Number(msg.group_id),
-
-        group_id: Number(msg.group_id),
-
-        group_name: msg.group_name || '',
-
-        sender_name: senderName || 'Unknown',
-
-        receiver_name: null,
-
-        reciever_name: null,
-
-        content: msg.message_text,
-
-        image_url: msg.image_url || null,
-
-        sent_time: moment(msg.sent_time).toISOString(),
-
-        is_read: msg.is_read,
-
-        sender: Number(msg.sender_id)
-      })
-    })
-  })
+  )
 }
 
 // =====================================================
 // UPDATE READ STATUS
 // =====================================================
 
-function updateReadStatus(ws, receiverId, isGroup) {
+function updateReadStatus(
+  ws,
+  receiverId,
+  isGroup
+) {
   if (!isSocketAuthenticated(ws)) {
     return
   }
 
   const userId = Number(ws.userId)
-
   const targetId = Number(receiverId)
 
   if (!userId || !targetId) {
     sendToClient(ws, {
       type: 'error',
-
-      sendType: 'update_read_status_error',
-
+      sendType:
+        'update_read_status_error',
       message: 'Invalid receiver ID'
     })
 
@@ -984,82 +1077,86 @@ function updateReadStatus(ws, receiverId, isGroup) {
   }
 
   let query
-
   let params
 
   if (isGroup) {
     query = `
       UPDATE user_message
-
       SET is_read = 1
-
-      WHERE
-        type = 1
-
+WHERE
+type = 1
         AND group_id = ?
-
-        AND sender_id != ?
-
-        AND (
-          is_read = 0
+  AND sender_id != ?
+    AND(
+      is_read = 0
           OR is_read IS NULL
-        )
-    `
+    )
+      `
 
-    params = [targetId, userId]
+    params = [
+      targetId,
+      userId
+    ]
   } else {
     query = `
       UPDATE user_message
-
       SET is_read = 1
-
-      WHERE
-        type = 0
-
+WHERE
+type = 0
         AND reciever_id = ?
-
-        AND sender_id = ?
-
-        AND (
-          is_read = 0
+  AND sender_id = ?
+    AND(
+      is_read = 0
           OR is_read IS NULL
-        )
-    `
+    )
+      `
 
-    params = [userId, targetId]
+    params = [
+      userId,
+      targetId
+    ]
   }
 
-  db.query(query, params, (err, result) => {
-    if (err) {
-      console.error('Update read status error:', err)
+  db.query(
+    query,
+    params,
+    (err, result) => {
+      if (err) {
+        console.error(
+          'Update read status error:',
+          err
+        )
+
+        sendToClient(ws, {
+          type: 'error',
+          sendType:
+            'update_read_status_error',
+          message:
+            'Failed to update read status'
+        })
+
+        return
+      }
 
       sendToClient(ws, {
-        type: 'error',
+        type: 'success',
+        sendType:
+          'message_read_status',
 
-        sendType: 'update_read_status_error',
+        user_id: userId,
 
-        message: 'Failed to update read status'
+        receiver_id: targetId,
+
+        group_id:
+          isGroup ? targetId : 0,
+
+        type:
+          isGroup ? 1 : 0,
+
+        isGroup
       })
-
-      return
     }
-
-    sendToClient(ws, {
-      type: 'success',
-
-      sendType: 'message_read_status',
-
-      user_id: userId,
-
-      receiver_id: targetId,
-
-      group_id: isGroup ? targetId : 0,
-
-      type: isGroup ? 1 : 0,
-
-      isGroup
-    })
-  })
+  )
 }
 
 // =====================================================
@@ -1068,17 +1165,14 @@ function updateReadStatus(ws, receiverId, isGroup) {
 
 wss.on('connection', ws => {
   ws.userId = null
-
   ws.accessToken = null
-
   ws.authenticated = false
-
   ws.authenticatedAt = null
-
-  // Prevent multiple simultaneous auth requests.
   ws.authenticating = false
 
-  console.log('WebSocket client connected')
+  console.log(
+    'WebSocket client connected'
+  )
 
   // ===================================================
   // MESSAGE
@@ -1086,7 +1180,8 @@ wss.on('connection', ws => {
 
   ws.on('message', async message => {
     try {
-      const rawMessage = message.toString().trim()
+      const rawMessage =
+        message.toString().trim()
 
       if (!rawMessage) {
         return
@@ -1099,9 +1194,7 @@ wss.on('connection', ws => {
       } catch (error) {
         sendToClient(ws, {
           type: 'error',
-
           sendType: 'invalid_json',
-
           message: 'Invalid JSON'
         })
 
@@ -1109,20 +1202,18 @@ wss.on('connection', ws => {
       }
 
       // =================================================
-      // AUTHENTICATION
+      // AUTH
       // =================================================
 
       if (data.sendType === 'auth') {
-        // Prevent multiple simultaneous auth calls.
         if (ws.authenticating === true) {
           sendToClient(ws, {
             type: 'error',
-
-            sendType: 'auth_in_progress',
-
+            sendType:
+              'auth_in_progress',
             authenticated: false,
-
-            message: 'Authentication is already in progress'
+            message:
+              'Authentication is already in progress'
           })
 
           return
@@ -1131,22 +1222,35 @@ wss.on('connection', ws => {
         ws.authenticating = true
 
         try {
-          const authenticated = await authenticateSocket(ws, data)
+          const authenticated =
+            await authenticateSocket(
+              ws,
+              data
+            )
 
           if (!authenticated) {
             return
           }
 
-          // =================================================
-          // LOAD PREVIOUS CHAT AFTER AUTH
-          // =================================================
+          if (
+            data.receiverId ||
+            data.recieverId
+          ) {
+            const receiverId =
+              Number(
+                data.receiverId ||
+                data.recieverId
+              )
 
-          if (data.receiverId || data.recieverId) {
-            const receiverId = Number(data.receiverId || data.recieverId)
+            const isGroup =
+              Boolean(data.isGroup)
 
-            const isGroup = Boolean(data.isGroup)
-
-            getPreviousMessages(ws, ws.userId, receiverId, isGroup)
+            getPreviousMessages(
+              ws,
+              ws.userId,
+              receiverId,
+              isGroup
+            )
           }
         } finally {
           ws.authenticating = false
@@ -1163,23 +1267,31 @@ wss.on('connection', ws => {
         return
       }
 
-      const authenticatedUserId = Number(ws.userId)
+      const authenticatedUserId =
+        Number(ws.userId)
 
       // =================================================
       // USER INFO
       // =================================================
 
-      if (data.sendType === 'userInfo') {
-        sendUserInfo(ws, Number(data.masterId))
+      if (
+        data.sendType === 'userInfo'
+      ) {
+        sendUserInfo(
+          ws,
+          Number(data.masterId)
+        )
 
         return
       }
 
       // =================================================
-      // TOTAL UNREAD MESSAGES
+      // TOTAL UNREAD
       // =================================================
 
-      if (data.sendType === 'totalMsg') {
+      if (
+        data.sendType === 'totalMsg'
+      ) {
         sendTotalUnreadMessages(ws)
 
         return
@@ -1189,12 +1301,17 @@ wss.on('connection', ws => {
       // UPDATE READ STATUS
       // =================================================
 
-      if (data.sendType === 'update_read_status') {
+      if (
+        data.sendType ===
+        'update_read_status'
+      ) {
         updateReadStatus(
           ws,
-
-          Number(data.receiverId || data.recieverId || 0),
-
+          Number(
+            data.receiverId ||
+            data.recieverId ||
+            0
+          ),
           Boolean(data.isGroup)
         )
 
@@ -1202,27 +1319,41 @@ wss.on('connection', ws => {
       }
 
       // =================================================
-      // GET PREVIOUS MESSAGES
+      // PREVIOUS MESSAGES
       // =================================================
 
-      if (data.sendType === 'get_previous_messages') {
-        const receiverId = Number(data.receiverId || data.recieverId || 0)
+      if (
+        data.sendType ===
+        'get_previous_messages'
+      ) {
+        const receiverId =
+          Number(
+            data.receiverId ||
+            data.recieverId ||
+            0
+          )
 
-        const isGroup = Boolean(data.isGroup)
+        const isGroup =
+          Boolean(data.isGroup)
 
         if (!receiverId) {
           sendToClient(ws, {
             type: 'error',
-
-            sendType: 'previous_message_error',
-
-            message: 'Receiver ID is required'
+            sendType:
+              'previous_message_error',
+            message:
+              'Receiver ID is required'
           })
 
           return
         }
 
-        getPreviousMessages(ws, authenticatedUserId, receiverId, isGroup)
+        getPreviousMessages(
+          ws,
+          authenticatedUserId,
+          receiverId,
+          isGroup
+        )
 
         return
       }
@@ -1231,26 +1362,44 @@ wss.on('connection', ws => {
       // CREATE GROUP
       // =================================================
 
-      if (data.sendType === 'group_create') {
-        const senderId = authenticatedUserId
+      if (
+        data.sendType ===
+        'group_create'
+      ) {
+        const senderId =
+          authenticatedUserId
 
-        const groupName = String(data.groupName || '').trim()
+        const groupName =
+          String(
+            data.groupName || ''
+          ).trim()
 
-        const masterId = Number(data.masterId || 0)
+        const masterId =
+          Number(
+            data.masterId || 0
+          )
 
-        const masterCompanyId = Number(data.masterCompanyId || 0)
+        const masterCompanyId =
+          Number(
+            data.masterCompanyId || 0
+          )
 
-        const selectedUsers = Array.isArray(data.userSelected)
-          ? data.userSelected.map(Number).filter(Boolean)
-          : []
+        const selectedUsers =
+          Array.isArray(
+            data.userSelected
+          )
+            ? data.userSelected
+              .map(Number)
+              .filter(Boolean)
+            : []
 
         if (!groupName) {
           sendToClient(ws, {
             type: 'error',
-
-            sendType: 'group_create_error',
-
-            message: 'Group name is required'
+            sendType:
+              'group_create_error',
+            message:
+              'Group name is required'
           })
 
           return
@@ -1259,132 +1408,159 @@ wss.on('connection', ws => {
         if (!selectedUsers.length) {
           sendToClient(ws, {
             type: 'error',
-
-            sendType: 'group_create_error',
-
-            message: 'At least one user is required'
+            sendType:
+              'group_create_error',
+            message:
+              'At least one user is required'
           })
 
           return
         }
 
-        const groupUsers = [...new Set([senderId, ...selectedUsers])]
+        const groupUsers = [
+          ...new Set([
+            senderId,
+            ...selectedUsers
+          ])
+        ]
 
         const groupQuery = `
           INSERT INTO groups
-          (
-            group_name,
-            master_id,
-            master_company_id,
-            created_by,
-            is_active
-          )
-
-          VALUES (?, ?, ?, ?, ?)
-        `
+  (
+    group_name,
+    master_id,
+    master_company_id,
+    created_by,
+    is_active
+  )
+VALUES(?, ?, ?, ?, ?)
+  `
 
         db.query(
           groupQuery,
-
-          [groupName, masterId, masterCompanyId, senderId, 1],
-
+          [
+            groupName,
+            masterId,
+            masterCompanyId,
+            senderId,
+            1
+          ],
           (err, result) => {
             if (err) {
-              console.error('Create group error:', err)
+              console.error(
+                'Create group error:',
+                err
+              )
 
               sendToClient(ws, {
                 type: 'error',
-
-                sendType: 'group_create_error',
-
-                message: 'Failed to create group'
+                sendType:
+                  'group_create_error',
+                message:
+                  'Failed to create group'
               })
 
               return
             }
 
-            const groupId = result.insertId
+            const groupId =
+              result.insertId
 
             const insertUser = `
               INSERT INTO user_group
-              (
-                group_id,
-                user_id,
-                is_active
-              )
-
-              VALUES (?, ?, ?)
-            `
+  (
+    group_id,
+    user_id,
+    is_active
+  )
+VALUES(?, ?, ?)
+  `
 
             let completed = 0
-
             let failed = false
 
-            groupUsers.forEach(userId => {
-              db.query(
-                insertUser,
-
-                [groupId, userId, 1],
-
-                error => {
-                  if (failed) {
-                    return
-                  }
-
-                  if (error) {
-                    failed = true
-
-                    console.error('User group insert error:', error)
-
-                    sendToClient(ws, {
-                      type: 'error',
-
-                      sendType: 'group_create_error',
-
-                      message: 'Failed to add group members'
-                    })
-
-                    return
-                  }
-
-                  completed++
-
-                  if (completed === groupUsers.length) {
-                    const groupData = {
-                      id: groupId,
-
-                      group_id: groupId,
-
-                      type: 1,
-
-                      group_name: groupName,
-
-                      created_by: senderId,
-
-                      created_at: new Date(),
-
-                      sendType: 'group_list'
+            groupUsers.forEach(
+              userId => {
+                db.query(
+                  insertUser,
+                  [
+                    groupId,
+                    userId,
+                    1
+                  ],
+                  error => {
+                    if (failed) {
+                      return
                     }
 
-                    groupUsers.forEach(userId => {
-                      sendToUser(userId, groupData)
-                    })
+                    if (error) {
+                      failed = true
 
-                    sendToClient(ws, {
-                      type: 'success',
+                      console.error(
+                        'User group insert error:',
+                        error
+                      )
 
-                      sendType: 'group_create_success',
+                      sendToClient(
+                        ws,
+                        {
+                          type: 'error',
+                          sendType:
+                            'group_create_error',
+                          message:
+                            'Failed to add group members'
+                        }
+                      )
 
-                      group_id: groupId,
+                      return
+                    }
 
-                      group_name: groupName,
+                    completed++
 
-                      message: 'Group created successfully'
-                    })
+                    if (
+                      completed ===
+                      groupUsers.length
+                    ) {
+                      const groupData = {
+                        id: groupId,
+                        group_id:
+                          groupId,
+                        type: 1,
+                        group_name:
+                          groupName,
+                        created_by:
+                          senderId,
+                        created_at:
+                          new Date(),
+                        sendType:
+                          'group_list'
+                      }
+
+                      groupUsers.forEach(
+                        userId => {
+                          sendToUser(
+                            userId,
+                            groupData
+                          )
+                        }
+                      )
+
+                      sendToClient(ws, {
+                        type: 'success',
+                        sendType:
+                          'group_create_success',
+                        group_id:
+                          groupId,
+                        group_name:
+                          groupName,
+                        message:
+                          'Group created successfully'
+                      })
+                    }
                   }
-                }
-              )
-            })
+                )
+              }
+            )
           }
         )
 
@@ -1395,58 +1571,120 @@ wss.on('connection', ws => {
       // SEND MESSAGE
       // =================================================
 
-      if (data.sendType === 'message') {
+      if (
+        data.sendType === 'message'
+      ) {
+        const senderId =
+          authenticatedUserId
 
-        const senderId = authenticatedUserId
+        const type =
+          Number(data.type) === 1
+            ? 1
+            : 0
 
-        const type = Number(data.type) === 1 ? 1 : 0
+        const receiverId =
+          Number(
+            data.receiver_id ||
+            data.reciever_id ||
+            0
+          )
 
-        const receiverId = Number(data.receiver_id || data.reciever_id || 0)
+        const content =
+          data.content || ''
 
-        const content = data.content || ''
-
-        const imageUrl = data.image_url || null
+        const imageUrl =
+          data.image_url || null
 
         if (!receiverId) {
           sendToClient(ws, {
             type: 'error',
-
-            sendType: 'message_error',
-
-            message: 'Receiver ID is required'
+            sendType:
+              'message_error',
+            message:
+              'Receiver ID is required'
           })
 
           return
         }
 
         // =================================================
+        // IMPORTANT DATETIME FIX
+        // =================================================
+
+        /*
+         * Client may send:
+         *
+         * 2026-09-21 00:20:58 -06:00
+         *
+         * MySQL DATETIME cannot store:
+         *
+         * -06:00
+         *
+         * So convert it to UTC:
+         *
+         * 2026-09-21 06:20:58
+         */
+
+        const mysqlSentTime =
+          toMySQLDateTimeUTC(
+            data.sent_time
+          )
+
+        const responseSentTime =
+          toISOStringUTC(
+            mysqlSentTime
+          )
+
+        console.log(
+          '[MESSAGE] Client sent_time:',
+          data.sent_time
+        )
+
+        console.log(
+          '[MESSAGE] MySQL sent_time:',
+          mysqlSentTime
+        )
+
+        console.log(
+          '[MESSAGE] Response sent_time:',
+          responseSentTime
+        )
+
+        // =================================================
         // GROUP MESSAGE
         // =================================================
 
         if (type === 1) {
-
           const memberQuery = `
             SELECT 1
             FROM user_group
-            WHERE
-              group_id = ?
-              AND user_id = ?
-              AND is_active = 1
+WHERE
+group_id = ?
+  AND user_id = ?
+    AND is_active = 1
             LIMIT 1
-          `
+  `
 
           db.query(
             memberQuery,
-            [receiverId, senderId],
-            (memberError, members) => {
-
-              if (memberError || !members.length) {
+            [
+              receiverId,
+              senderId
+            ],
+            (
+              memberError,
+              members
+            ) => {
+              if (
+                memberError ||
+                !members.length
+              ) {
                 sendToClient(ws, {
                   type: 'error',
-
-                  sendType: 'message_error',
-
-                  message: 'You are not a member of this group'
+                  sendType:
+                    'message_error',
+                  message:
+                    'You are not a member of this group'
                 })
 
                 return
@@ -1454,96 +1692,156 @@ wss.on('connection', ws => {
 
               const query = `
                 INSERT INTO user_message
-                (
-                  type,
-                  sender_id,
-                  group_id,
-                  image_url,
-                  message_text,
-                  master_id,
-                  master_company_id,
-                  created_by,
-                  sent_time,
-                  is_read
-                )
-
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-              `
+  (
+    type,
+    sender_id,
+    group_id,
+    image_url,
+    message_text,
+    master_id,
+    master_company_id,
+    created_by,
+    sent_time,
+    is_read
+  )
+VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `
 
               db.query(
                 query,
-
                 [
                   1,
                   senderId,
                   receiverId,
-                  imageUrl || null,
+                  imageUrl,
                   content,
-                  data.master_id,
-                  data.master_company_id,
+                  data.master_id || null,
+                  data.master_company_id || null,
                   senderId,
-                  data.sent_time,
+                  mysqlSentTime,
                   0
                 ],
-
-                (err, result) => {
+                (
+                  err,
+                  result
+                ) => {
                   if (err) {
-                    console.error('Group message insert error:', err)
+                    console.error(
+                      'Group message insert error:',
+                      err
+                    )
 
                     sendToClient(ws, {
                       type: 'error',
-                      sendType: 'message_error',
-                      message: 'Failed to send group message'
+                      sendType:
+                        'message_error',
+                      message:
+                        err.sqlMessage ||
+                        'Failed to send group message'
                     })
 
                     return
                   }
 
-                  getUserName(senderId, sender => {
+                  getUserName(
+                    senderId,
+                    sender => {
+                      const messageData = {
+                        id:
+                          result.insertId,
 
-                    const messageData = {
-                      id: result.insertId,
-                      type: 1,
-                      sendType: 'new_message',
-                      sender_id: senderId,
-                      receiver_id: receiverId,
-                      reciever_id: receiverId,
-                      group_id: receiverId,
-                      sender_name: sender?.name || 'Unknown',
-                      receiver_name: null,
-                      reciever_name: null,
-                      content,
-                      image_url: imageUrl || null,
-                      sent_time: moment(data.sent_time).toISOString(),
-                      sender: senderId
-                    }
+                        type: 1,
 
-                    wss.clients.forEach(client => {
-                      if (!isSocketAuthenticated(client)) {
-                        return
+                        sendType:
+                          'new_message',
+
+                        sender_id:
+                          senderId,
+
+                        receiver_id:
+                          receiverId,
+
+                        reciever_id:
+                          receiverId,
+
+                        group_id:
+                          receiverId,
+
+                        sender_name:
+                          sender?.name ||
+                          'Unknown',
+
+                        receiver_name:
+                          null,
+
+                        reciever_name:
+                          null,
+
+                        content,
+
+                        image_url:
+                          imageUrl || null,
+
+                        // Always UTC ISO
+                        sent_time:
+                          responseSentTime,
+
+                        sender:
+                          senderId
                       }
 
-                      const clientUserId = Number(client.userId)
-
-                      if (clientUserId === senderId) {
-                        sendToClient(client, messageData)
-
-                        return
-                      }
-
-                      db.query(
-                        memberQuery,
-
-                        [receiverId, clientUserId],
-
-                        (memberError, members) => {
-                          if (!memberError && members.length) {
-                            sendToClient(client, messageData)
+                      wss.clients.forEach(
+                        client => {
+                          if (
+                            !isSocketAuthenticated(
+                              client
+                            )
+                          ) {
+                            return
                           }
+
+                          const clientUserId =
+                            Number(
+                              client.userId
+                            )
+
+                          if (
+                            clientUserId ===
+                            senderId
+                          ) {
+                            sendToClient(
+                              client,
+                              messageData
+                            )
+
+                            return
+                          }
+
+                          db.query(
+                            memberQuery,
+                            [
+                              receiverId,
+                              clientUserId
+                            ],
+                            (
+                              memberError,
+                              members
+                            ) => {
+                              if (
+                                !memberError &&
+                                members.length
+                              ) {
+                                sendToClient(
+                                  client,
+                                  messageData
+                                )
+                              }
+                            }
+                          )
                         }
                       )
-                    })
-                  })
+                    }
+                  )
                 }
               )
             }
@@ -1553,87 +1851,164 @@ wss.on('connection', ws => {
         }
 
         // =================================================
-        // ONE-TO-ONE MESSAGE
+        // ONE TO ONE MESSAGE
         // =================================================
 
         const query = `
-                      INSERT INTO user_message
-                      (
-                          type,
-                          sender_id,
-                          reciever_id,
-                          group_id,
-                          image_url,
-                          message_text,
-                          master_id,
-                          master_company_id,
-                          created_by,
-                          sent_time,
-                          is_read
-                      )
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                      `
+          INSERT INTO user_message
+  (
+    type,
+    sender_id,
+    reciever_id,
+    group_id,
+    image_url,
+    message_text,
+    master_id,
+    master_company_id,
+    created_by,
+    sent_time,
+    is_read
+  )
+VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `
 
         db.query(
           query,
-
           [
             0,
             senderId,
             receiverId,
             0,
-            imageUrl || null,
+            imageUrl,
             content,
-            data.master_id,
-            data.master_company_id,
+            data.master_id || null,
+            data.master_company_id || null,
             senderId,
-            data.sent_time,
+            mysqlSentTime,
             0
           ],
-
-          (err, result) => {
+          (
+            err,
+            result
+          ) => {
             if (err) {
-              console.error('============== MYSQL ERROR ==============')
+              console.error(
+                '============== MYSQL ERROR =============='
+              )
+
               console.error(err)
-              console.error('Code:', err.code)
-              console.error('Errno:', err.errno)
-              console.error('SQL State:', err.sqlState)
-              console.error('Message:', err.sqlMessage)
-              console.error('========================================')
+
+              console.error(
+                'Code:',
+                err.code
+              )
+
+              console.error(
+                'Errno:',
+                err.errno
+              )
+
+              console.error(
+                'SQL State:',
+                err.sqlState
+              )
+
+              console.error(
+                'Message:',
+                err.sqlMessage
+              )
+
+              console.error(
+                'sent_time received:',
+                data.sent_time
+              )
+
+              console.error(
+                'sent_time stored:',
+                mysqlSentTime
+              )
+
+              console.error(
+                '========================================'
+              )
 
               sendToClient(ws, {
                 type: 'error',
-                sendType: 'message_error',
-                message: err.sqlMessage
+                sendType:
+                  'message_error',
+                message:
+                  err.sqlMessage ||
+                  'Failed to send message'
               })
 
               return
             }
 
-            getUserName(senderId, sender => {
-              getUserName(receiverId, receiver => {
-                const messageData = {
-                  id: result.insertId,
-                  type: 0,
-                  sendType: 'new_message',
-                  sender_id: senderId,
-                  receiver_id: receiverId,
-                  reciever_id: receiverId,
-                  group_id: 0,
-                  sender_name: sender?.name || 'Unknown',
-                  receiver_name: receiver?.name || 'Unknown',
-                  reciever_name: receiver?.name || 'Unknown',
-                  content,
-                  image_url: imageUrl || null,
-                  sent_time: moment(data.sent_time).toISOString(),
-                  sender: senderId
-                }
+            getUserName(
+              senderId,
+              sender => {
+                getUserName(
+                  receiverId,
+                  receiver => {
+                    const messageData = {
+                      id:
+                        result.insertId,
 
-                sendToUser(senderId, messageData)
+                      type: 0,
 
-                sendToUser(receiverId, messageData)
-              })
-            })
+                      sendType:
+                        'new_message',
+
+                      sender_id:
+                        senderId,
+
+                      receiver_id:
+                        receiverId,
+
+                      reciever_id:
+                        receiverId,
+
+                      group_id: 0,
+
+                      sender_name:
+                        sender?.name ||
+                        'Unknown',
+
+                      receiver_name:
+                        receiver?.name ||
+                        'Unknown',
+
+                      reciever_name:
+                        receiver?.name ||
+                        'Unknown',
+
+                      content,
+
+                      image_url:
+                        imageUrl || null,
+
+                      // IMPORTANT
+                      // Return ISO UTC
+                      sent_time:
+                        responseSentTime,
+
+                      sender:
+                        senderId
+                    }
+
+                    sendToUser(
+                      senderId,
+                      messageData
+                    )
+
+                    sendToUser(
+                      receiverId,
+                      messageData
+                    )
+                  }
+                )
+              }
+            )
           }
         )
 
@@ -1646,47 +2021,53 @@ wss.on('connection', ws => {
 
       sendToClient(ws, {
         type: 'error',
-
-        sendType: 'unknown_send_type',
-
-        message: `Unknown sendType: ${data.sendType}`
+        sendType:
+          'unknown_send_type',
+        message:
+          `Unknown sendType: ${data.sendType} `
       })
     } catch (error) {
-      console.error('WebSocket message handler error:', error)
+      console.error(
+        'WebSocket message handler error:',
+        error
+      )
 
       sendToClient(ws, {
         type: 'error',
-
-        sendType: 'server_error',
-
-        message: 'Internal WebSocket server error'
+        sendType:
+          'server_error',
+        message:
+          'Internal WebSocket server error'
       })
     }
   })
 
-  // =====================================================
+  // ===================================================
   // SOCKET CLOSE
-  // =====================================================
+  // ===================================================
 
   ws.on('close', (code, reason) => {
     console.log(
       `WebSocket disconnected | user=${ws.userId || 'Unknown'
-      } | code=${code} | reason=${reason?.toString() || 'none'}`
+      } | code=${code} | reason=${reason?.toString() || 'none'
+      } `
     )
 
     ws.authenticated = false
-
     ws.userId = null
-
     ws.accessToken = null
   })
 
-  // =====================================================
+  // ===================================================
   // SOCKET ERROR
-  // =====================================================
+  // ===================================================
 
   ws.on('error', error => {
-    console.error(`WebSocket error for user ${ws.userId || 'Unknown'}:`, error)
+    console.error(
+      `WebSocket error for user ${ws.userId || 'Unknown'
+      }: `,
+      error
+    )
   })
 })
 
@@ -1694,7 +2075,8 @@ wss.on('connection', ws => {
 // PERIODIC TOKEN REVALIDATION
 // =====================================================
 
-const TOKEN_REVALIDATION_INTERVAL = 5 * 60 * 1000
+const TOKEN_REVALIDATION_INTERVAL =
+  5 * 60 * 1000
 
 setInterval(async () => {
   for (const ws of wss.clients) {
@@ -1703,33 +2085,32 @@ setInterval(async () => {
     }
 
     try {
-      const tokenResult = await checkAccessToken(ws.accessToken)
+      const tokenResult =
+        await checkAccessToken(
+          ws.accessToken
+        )
 
       // =================================================
-      // TOKEN EXPIRED / INVALID
+      // TOKEN EXPIRED
       // =================================================
 
       if (!tokenResult.valid) {
         ws.authenticated = false
-
         ws.userId = null
-
         ws.accessToken = null
 
         sendToClient(ws, {
           type: 'error',
-
-          sendType: 'auth_expired',
-
+          sendType:
+            'auth_expired',
           authenticated: false,
-
-          statusCode: tokenResult.statusCode || 401,
-
-          message: tokenResult.message || 'Session expired'
+          statusCode:
+            tokenResult.statusCode || 401,
+          message:
+            tokenResult.message ||
+            'Session expired'
         })
 
-        // IMPORTANT:
-        // Do not close WebSocket.
         continue
       }
 
@@ -1737,30 +2118,29 @@ setInterval(async () => {
       // USER MISMATCH
       // =================================================
 
-      if (Number(tokenResult.userId) !== Number(ws.userId)) {
+      if (
+        Number(tokenResult.userId) !==
+        Number(ws.userId)
+      ) {
         ws.authenticated = false
-
         ws.userId = null
-
         ws.accessToken = null
 
         sendToClient(ws, {
           type: 'error',
-
-          sendType: 'auth_mismatch',
-
+          sendType:
+            'auth_mismatch',
           authenticated: false,
-
           statusCode: 401,
-
-          message: 'Authentication mismatch'
+          message:
+            'Authentication mismatch'
         })
-
-        // IMPORTANT:
-        // Do not close WebSocket.
       }
     } catch (error) {
-      console.error('Periodic token validation error:', error)
+      console.error(
+        'Periodic token validation error:',
+        error
+      )
     }
   }
 }, TOKEN_REVALIDATION_INTERVAL)
@@ -1772,12 +2152,11 @@ setInterval(async () => {
 app.get('/', (req, res) => {
   res.status(200).json({
     status: 'success',
-
-    message: 'WebSocket server is running',
-
+    message:
+      'WebSocket server is running',
     port: PORT,
-
-    connectedClients: wss.clients.size
+    connectedClients:
+      wss.clients.size
   })
 })
 
@@ -1785,140 +2164,199 @@ app.get('/', (req, res) => {
 // DUTY STATUS
 // =====================================================
 
-app.post('/broadcast-duty-status', (req, res) => {
-  try {
-    const data = req.body
+app.post(
+  '/broadcast-duty-status',
+  (req, res) => {
+    try {
+      const data = req.body
 
-    const driverId = Number(data.driverId)
+      const driverId =
+        Number(data.driverId)
 
-    if (!driverId) {
-      return res.status(400).json({
+      if (!driverId) {
+        return res.status(400).json({
+          status: 'failure',
+          message:
+            'Valid driverId is required'
+        })
+      }
+
+      const sent = sendToUser(
+        driverId,
+        {
+          sendType:
+            'change-duty-status',
+
+          driverId,
+
+          driver:
+            data.driver,
+
+          vehicle:
+            data.vehicle,
+
+          shiftStatus:
+            data.shiftStatus,
+
+          startLogTime:
+            data.startLogTime,
+
+          endLogTime:
+            data.endLogTime,
+
+          duration:
+            data.duration,
+
+          locationName:
+            data.locationName,
+
+          shift_time:
+            data.shift_time,
+
+          cycle_time:
+            data.cycle_time,
+
+          break_time:
+            data.break_time,
+
+          drive_time:
+            data.drive_time,
+
+          odometer:
+            data.odometer,
+
+          engineHours:
+            data.engineHours
+        }
+      )
+
+      return res.status(200).json({
+        status: 'success',
+
+        message: sent
+          ? 'Duty status sent successfully'
+          : 'Driver is not connected',
+
+        driverId
+      })
+    } catch (error) {
+      console.error(
+        'Duty status error:',
+        error
+      )
+
+      return res.status(500).json({
         status: 'failure',
-
-        message: 'Valid driverId is required'
+        message:
+          'Failed to broadcast duty status'
       })
     }
-
-    const sent = sendToUser(driverId, {
-      sendType: 'change-duty-status',
-
-      driverId,
-
-      driver: data.driver,
-
-      vehicle: data.vehicle,
-
-      shiftStatus: data.shiftStatus,
-
-      startLogTime: data.startLogTime,
-
-      endLogTime: data.endLogTime,
-
-      duration: data.duration,
-
-      locationName: data.locationName,
-
-      shift_time: data.shift_time,
-
-      cycle_time: data.cycle_time,
-
-      break_time: data.break_time,
-
-      drive_time: data.drive_time,
-
-      odometer: data.odometer,
-
-      engineHours: data.engineHours
-    })
-
-    return res.status(200).json({
-      status: 'success',
-
-      message: sent
-        ? 'Duty status sent successfully'
-        : 'Driver is not connected',
-
-      driverId
-    })
-  } catch (error) {
-    console.error('Duty status error:', error)
-
-    return res.status(500).json({
-      status: 'failure',
-
-      message: 'Failed to broadcast duty status'
-    })
   }
-})
+)
 
 // =====================================================
 // FORCE LOGOUT
 // =====================================================
 
-app.post('/broadcast-force-logout', (req, res) => {
-  try {
-    const driverId = Number(req.body.driverId)
+app.post(
+  '/broadcast-force-logout',
+  (req, res) => {
+    try {
+      const driverId =
+        Number(req.body.driverId)
 
-    if (!driverId) {
-      return res.status(400).json({
+      if (!driverId) {
+        return res.status(400).json({
+          status: 'failure',
+          message:
+            'Valid driverId is required'
+        })
+      }
+
+      const sent =
+        closeUserSockets(
+          driverId,
+          'You have been logged out by the administrator'
+        )
+
+      return res.status(200).json({
+        status: 'success',
+
+        message: sent
+          ? 'User logout successfully'
+          : 'User is not connected',
+
+        driverId
+      })
+    } catch (error) {
+      console.error(
+        'Force logout error:',
+        error
+      )
+
+      return res.status(500).json({
         status: 'failure',
-
-        message: 'Valid driverId is required'
+        message:
+          'Failed to force logout'
       })
     }
-
-    const sent = closeUserSockets(
-      driverId,
-
-      'You have been logged out by the administrator'
-    )
-
-    return res.status(200).json({
-      status: 'success',
-
-      message: sent ? 'User logout successfully' : 'User is not connected',
-
-      driverId
-    })
-  } catch (error) {
-    console.error('Force logout error:', error)
-
-    return res.status(500).json({
-      status: 'failure',
-
-      message: 'Failed to force logout'
-    })
   }
-})
+)
 
 // =====================================================
 // HTTP SERVER
 // =====================================================
 
-const server = http.createServer(app)
+const server =
+  http.createServer(app)
 
 // =====================================================
 // WEBSOCKET UPGRADE
 // =====================================================
 
-server.on('upgrade', (request, socket, head) => {
-  try {
-    wss.handleUpgrade(request, socket, head, ws => {
-      wss.emit('connection', ws, request)
-    })
-  } catch (error) {
-    console.error('WebSocket upgrade error:', error)
+server.on(
+  'upgrade',
+  (request, socket, head) => {
+    try {
+      wss.handleUpgrade(
+        request,
+        socket,
+        head,
+        ws => {
+          wss.emit(
+            'connection',
+            ws,
+            request
+          )
+        }
+      )
+    } catch (error) {
+      console.error(
+        'WebSocket upgrade error:',
+        error
+      )
 
-    socket.destroy()
+      socket.destroy()
+    }
   }
-})
+)
 
 // =====================================================
 // START
 // =====================================================
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`HTTP + WebSocket server running on port ${PORT}`)
+server.listen(
+  PORT,
+  '0.0.0.0',
+  () => {
+    console.log(
+      `HTTP + WebSocket server running on port ${PORT} `
+    )
 
-  console.log(`[CONFIG] BACKEND_URL=${process.env.BACKEND_URL || '(missing)'}`)
-})
+    console.log(
+      `[CONFIG] BACKEND_URL = ${process.env.BACKEND_URL ||
+      '(missing)'
+      } `
+    )
+  }
+)
