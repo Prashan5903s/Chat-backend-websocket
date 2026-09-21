@@ -359,7 +359,7 @@ async function checkAccessToken(token) {
 
     const backendUrl =
       String(
-        process.env.BACKENDURL || ''
+        process.env.BACKEND_URL || ''
       ).replace(/\/$/, '')
 
     if (!backendUrl) {
