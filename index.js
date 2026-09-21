@@ -44,7 +44,7 @@ const wss = new WebSocket.Server({
   noServer: true
 })
 
-function sendToClient (ws, data) {
+function sendToClient(ws, data) {
   try {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       return false
@@ -60,7 +60,7 @@ function sendToClient (ws, data) {
   }
 }
 
-function sendToUser (userId, data) {
+function sendToUser(userId, data) {
   const targetUserId = Number(userId)
 
   let sent = false
@@ -80,7 +80,7 @@ function sendToUser (userId, data) {
   return sent
 }
 
-function closeUserSockets (userId, reason = 'Session expired') {
+function closeUserSockets(userId, reason = 'Session expired') {
   const targetUserId = Number(userId)
 
   let closed = false
@@ -109,16 +109,16 @@ function closeUserSockets (userId, reason = 'Session expired') {
   return closed
 }
 
-function isSocketAuthenticated (ws) {
+function isSocketAuthenticated(ws) {
   return Boolean(
     ws &&
-      ws.readyState === WebSocket.OPEN &&
-      ws.authenticated === true &&
-      ws.userId
+    ws.readyState === WebSocket.OPEN &&
+    ws.authenticated === true &&
+    ws.userId
   )
 }
 
-function requireAuthentication (ws) {
+function requireAuthentication(ws) {
   if (!isSocketAuthenticated(ws)) {
     sendToClient(ws, {
       type: 'error',
@@ -133,7 +133,7 @@ function requireAuthentication (ws) {
   return true
 }
 
-function getUserName (userId, callback) {
+function getUserName(userId, callback) {
   const query = `
     SELECT
       id,
@@ -173,13 +173,13 @@ function getUserName (userId, callback) {
   })
 }
 
-function normalizeAccessToken (token) {
+function normalizeAccessToken(token) {
   return String(token || '')
     .replace(/^Bearer\s+/i, '')
     .trim()
 }
 
-async function checkAccessToken (token) {
+async function checkAccessToken(token) {
   try {
     const normalizedToken = normalizeAccessToken(token)
 
@@ -291,7 +291,7 @@ async function checkAccessToken (token) {
   }
 }
 
-async function authenticateSocket (ws, data) {
+async function authenticateSocket(ws, data) {
   try {
     if (ws.authenticated === true) {
       sendToClient(ws, {
@@ -450,7 +450,7 @@ async function authenticateSocket (ws, data) {
   }
 }
 
-function getPreviousMessages (ws, senderId, receiverId, isGroup) {
+function getPreviousMessages(ws, senderId, receiverId, isGroup) {
   if (!isSocketAuthenticated(ws)) {
     return
   }
@@ -481,6 +481,7 @@ function getPreviousMessages (ws, senderId, receiverId, isGroup) {
 
     params = [receiverId]
   } else {
+
     query = `
       SELECT
         um.*,
@@ -526,9 +527,7 @@ function getPreviousMessages (ws, senderId, receiverId, isGroup) {
 
       sendToClient(ws, {
         type: 'error',
-
         sendType: 'previous_message_error',
-
         message: 'Failed to load previous messages'
       })
 
@@ -536,64 +535,45 @@ function getPreviousMessages (ws, senderId, receiverId, isGroup) {
     }
 
     results.forEach(msg => {
-      const senderName = `${msg.sender_first_name || 'Unknown'} ${
-        msg.sender_last_name || ''
-      }`.trim()
+      const senderName = `${msg.sender_first_name || 'Unknown'} ${msg.sender_last_name || ''
+        }`.trim()
 
-      const receiverName = `${msg.receiver_first_name || 'Unknown'} ${
-        msg.receiver_last_name || ''
-      }`.trim()
+      const receiverName = `${msg.receiver_first_name || 'Unknown'} ${msg.receiver_last_name || ''
+        }`.trim()
+
+      const sentTime = msg?.sent_time ? moment(msg?.sent_time).format('YYYY-MM-DD HH:mm:ss') : moment().tz('America/Denver').format('YYYY-MM-DD HH:mm:ss')
 
       sendToClient(ws, {
         id: msg.id,
-
         type: Number(msg.type),
-
         sendType: 'previous_message',
-
         sender_id: Number(msg.sender_id),
-
         receiver_id: Number(msg.reciever_id || 0),
-
         reciever_id: Number(msg.reciever_id || 0),
-
         group_id: Number(msg.group_id || 0),
-
         sender_name: senderName,
-
         receiver_name: receiverName,
-
         reciever_name: receiverName,
-
         content: msg.message_text,
-
         image_url: msg.image_url || null,
-
-        sent_time: msg.sent_time,
-
+        sent_time: sentTime,
         is_read: msg.is_read,
-
         sender: Number(msg.sender_id)
       })
     })
 
     sendToClient(ws, {
       type: 'success',
-
       sendType: 'previous_messages_loaded',
-
       receiver_id: receiverId,
-
       group_id: isGroup ? receiverId : 0,
-
       isGroup,
-
       total: results.length
     })
   })
 }
 
-function sendUserInfo (ws, masterId) {
+function sendUserInfo(ws, masterId) {
   const senderId = Number(ws.userId)
 
   if (!senderId) {
@@ -803,7 +783,7 @@ function sendUserInfo (ws, masterId) {
 // TOTAL UNREAD MESSAGES
 // =====================================================
 
-function sendTotalUnreadMessages (ws) {
+function sendTotalUnreadMessages(ws) {
   if (!isSocketAuthenticated(ws)) {
     return
   }
@@ -865,13 +845,11 @@ function sendTotalUnreadMessages (ws) {
     }
 
     messages.forEach(msg => {
-      const senderName = `${msg.sender_first_name || ''} ${
-        msg.sender_last_name || ''
-      }`.trim()
+      const senderName = `${msg.sender_first_name || ''} ${msg.sender_last_name || ''
+        }`.trim()
 
-      const receiverName = `${msg.receiver_first_name || ''} ${
-        msg.receiver_last_name || ''
-      }`.trim()
+      const receiverName = `${msg.receiver_first_name || ''} ${msg.receiver_last_name || ''
+        }`.trim()
 
       sendToClient(ws, {
         id: msg.id,
@@ -964,9 +942,8 @@ function sendTotalUnreadMessages (ws) {
     }
 
     messages.forEach(msg => {
-      const senderName = `${msg.sender_first_name || ''} ${
-        msg.sender_last_name || ''
-      }`.trim()
+      const senderName = `${msg.sender_first_name || ''} ${msg.sender_last_name || ''
+        }`.trim()
 
       sendToClient(ws, {
         id: msg.id,
@@ -1009,7 +986,7 @@ function sendTotalUnreadMessages (ws) {
 // UPDATE READ STATUS
 // =====================================================
 
-function updateReadStatus (ws, receiverId, isGroup) {
+function updateReadStatus(ws, receiverId, isGroup) {
   if (!isSocketAuthenticated(ws)) {
     return
   }
@@ -1258,11 +1235,10 @@ wss.on('connection', ws => {
         const isGroup = Boolean(data.isGroup)
 
         if (!receiverId) {
+
           sendToClient(ws, {
             type: 'error',
-
             sendType: 'previous_message_error',
-
             message: 'Receiver ID is required'
           })
 
@@ -1279,6 +1255,7 @@ wss.on('connection', ws => {
       // =================================================
 
       if (data.sendType === 'group_create') {
+
         const senderId = authenticatedUserId
 
         const groupName = String(data.groupName || '').trim()
@@ -1292,11 +1269,10 @@ wss.on('connection', ws => {
           : []
 
         if (!groupName) {
+        
           sendToClient(ws, {
             type: 'error',
-
             sendType: 'group_create_error',
-
             message: 'Group name is required'
           })
 
@@ -1304,11 +1280,10 @@ wss.on('connection', ws => {
         }
 
         if (!selectedUsers.length) {
+
           sendToClient(ws, {
             type: 'error',
-
             sendType: 'group_create_error',
-
             message: 'At least one user is required'
           })
 
@@ -1453,16 +1428,13 @@ wss.on('connection', ws => {
 
         const imageUrl = data.image_url || null
 
-        const sentTime = data.sent_time
-          ? moment(data.sent_time).format('YYYY-MM-DD HH:mm:ss')
-          : moment().tz('America/Denver').format('YYYY-MM-DD HH:mm:ss')
+        const sentTime = data.sent_time ? moment(data.sent_time).format('YYYY-MM-DD HH:mm:ss') : moment().tz('America/Denver').format('YYYY-MM-DD HH:mm:ss')
 
         if (!receiverId) {
+
           sendToClient(ws, {
             type: 'error',
-
             sendType: 'message_error',
-
             message: 'Receiver ID is required'
           })
 
@@ -1474,33 +1446,27 @@ wss.on('connection', ws => {
         // =================================================
 
         if (type === 1) {
+
           const memberQuery = `
             SELECT 1
-
             FROM user_group
-
             WHERE
               group_id = ?
-
               AND user_id = ?
-
               AND is_active = 1
-
             LIMIT 1
           `
 
           db.query(
             memberQuery,
-
             [receiverId, senderId],
-
             (memberError, members) => {
+
               if (memberError || !members.length) {
+
                 sendToClient(ws, {
                   type: 'error',
-
                   sendType: 'message_error',
-
                   message: 'You are not a member of this group'
                 })
 
@@ -1527,7 +1493,6 @@ wss.on('connection', ws => {
 
               db.query(
                 query,
-
                 [
                   1,
                   senderId,
@@ -1547,9 +1512,7 @@ wss.on('connection', ws => {
 
                     sendToClient(ws, {
                       type: 'error',
-
                       sendType: 'message_error',
-
                       message: 'Failed to send group message'
                     })
 
@@ -1559,31 +1522,18 @@ wss.on('connection', ws => {
                   getUserName(senderId, sender => {
                     const messageData = {
                       id: result.insertId,
-
                       type: 1,
-
                       sendType: 'new_message',
-
                       sender_id: senderId,
-
                       receiver_id: receiverId,
-
                       reciever_id: receiverId,
-
                       group_id: receiverId,
-
                       sender_name: sender?.name || 'Unknown',
-
                       receiver_name: null,
-
                       reciever_name: null,
-
                       content,
-
                       image_url: imageUrl || null,
-
                       sent_time: sentTime,
-
                       sender: senderId
                     }
 
@@ -1647,16 +1597,16 @@ wss.on('connection', ws => {
           query,
 
           [
-            0, // type
-            senderId, // sender_id
-            receiverId, // reciever_id
-            0, // group_id
-            imageUrl || null, // image_url
-            content, // message_text
-            data.master_id, // master_id
+            0,
+            senderId,
+            receiverId,
+            0,
+            imageUrl || null,
+            content,
+            data.master_id,
             data.master_company_id,
-            senderId, // created_by
-            sentTime, // sent_time
+            senderId,
+            sentTime,
             0
           ],
 
@@ -1752,8 +1702,7 @@ wss.on('connection', ws => {
 
   ws.on('close', (code, reason) => {
     console.log(
-      `WebSocket disconnected | user=${
-        ws.userId || 'Unknown'
+      `WebSocket disconnected | user=${ws.userId || 'Unknown'
       } | code=${code} | reason=${reason?.toString() || 'none'}`
     )
 
