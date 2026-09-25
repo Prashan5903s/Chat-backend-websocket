@@ -2120,6 +2120,7 @@ wss.on(
                           receiver_id: receiverId,
                           reciever_id: receiverId,
                           group_id: 0,
+                          group_name: null,
                           sender_name: sender?.name || 'Unknown',
                           receiver_name: receiver?.name || 'Unknown',
                           reciever_name: receiver?.name || 'Unknown',
