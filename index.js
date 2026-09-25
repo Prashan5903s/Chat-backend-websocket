@@ -702,11 +702,8 @@ function getPreviousMessages(
 
         sendToClient(ws, {
           type: 'error',
-          sendType:
-            'previous_message_error',
-
-          message:
-            'Failed to load previous messages'
+          sendType: 'previous_message_error',
+          message: 'Failed to load previous messages'
         })
 
         return
@@ -720,83 +717,31 @@ function getPreviousMessages(
           `${msg.receiver_first_name || 'Unknown'} ${msg.receiver_last_name || ''}`.trim()
 
         sendToClient(ws, {
-          id:
-            msg.id,
-
-          type:
-            Number(msg.type),
-
-          sendType:
-            'previous_message',
-
-          sender_id:
-            normalizeId(
-              msg.sender_id
-            ),
-
-          receiver_id:
-            normalizeId(
-              msg.reciever_id
-            ),
-
-          reciever_id:
-            normalizeId(
-              msg.reciever_id
-            ),
-
-          group_id:
-            normalizeId(
-              msg.group_id
-            ),
-
-          sender_name:
-            senderName,
-
-          receiver_name:
-            receiverName,
-
-          reciever_name:
-            receiverName,
-
-          content:
-            msg.message_text,
-
-          image_url:
-            msg.image_url || null,
-
-          sent_time:
-            toISODateTime(
-              msg.sent_time
-            ),
-
-          is_read:
-            msg.is_read,
-
-          sender:
-            normalizeId(
-              msg.sender_id
-            )
+          id: msg.id,
+          type: Number(msg.type),
+          sendType: 'previous_message',
+          sender_id: normalizeId(msg.sender_id),
+          receiver_id: normalizeId(msg.reciever_id),
+          reciever_id: normalizeId(msg.reciever_id),
+          group_id: normalizeId(msg.group_id),
+          sender_name: senderName,
+          receiver_name: receiverName,
+          reciever_name: receiverName,
+          content: msg.message_text,
+          image_url: msg.image_url || null,
+          sent_time: toISODateTime(msg.sent_time),
+          is_read: msg.is_read,
+          sender: normalizeId(msg.sender_id)
         })
       })
 
       sendToClient(ws, {
         type: 'success',
-
-        sendType:
-          'previous_messages_loaded',
-
-        receiver_id:
-          targetId,
-
-        group_id:
-          isGroup
-            ? targetId
-            : 0,
-
+        sendType: 'previous_messages_loaded',
+        receiver_id: targetId,
+        group_id: isGroup ? targetId : 0,
         isGroup,
-
-        total:
-          results.length
+        total: results.length
       })
     }
   )
@@ -816,20 +761,15 @@ function updateReadStatus(
     return
   }
 
-  const userId =
-    normalizeId(ws.userId)
+  const userId = normalizeId(ws.userId)
 
-  const targetId =
-    normalizeId(receiverId)
+  const targetId = normalizeId(receiverId)
 
   if (!userId || !targetId) {
     sendToClient(ws, {
       type: 'error',
-      sendType:
-        'update_read_status_error',
-
-      message:
-        'Invalid receiver ID'
+      sendType: 'update_read_status_error',
+      message: 'Invalid receiver ID'
     })
 
     return
@@ -1478,23 +1418,14 @@ wss.on(
             return
           }
 
-          if (
-            data.sendType ===
-            'auth'
-          ) {
-            if (
-              ws.authenticating ===
-              true
-            ) {
+          if (data.sendType === 'auth') {
+
+            if (ws.authenticating === true) {
               sendToClient(ws, {
                 type: 'error',
-                sendType:
-                  'auth_in_progress',
-                authenticated:
-                  false,
-
-                message:
-                  'Authentication is already in progress'
+                sendType: 'auth_in_progress',
+                authenticated: false,
+                message: 'Authentication is already in progress'
               })
 
               return
@@ -1530,12 +1461,12 @@ wss.on(
                   )
 
                 if (receiverId) {
-                  getPreviousMessages(
-                    ws,
-                    ws.userId,
-                    receiverId,
-                    isGroup
-                  )
+                  // getPreviousMessages(
+                  //   ws,
+                  //   ws.userId,
+                  //   receiverId,
+                  //   isGroup
+                  // )
                 }
               }
             } finally {
@@ -1619,30 +1550,17 @@ wss.on(
             return
           }
 
-          if (
-            data.sendType ===
-            'get_previous_messages'
-          ) {
-            const receiverId =
-              normalizeId(
-                data.receiverId ||
-                data.recieverId
-              )
+          if (data.sendType === 'get_previous_messages') {
 
-            const isGroup =
-              Boolean(
-                data.isGroup
-              )
+            const receiverId = normalizeId(data.receiverId || data.recieverId)
+
+            const isGroup = Boolean(data.isGroup)
 
             if (!receiverId) {
               sendToClient(ws, {
                 type: 'error',
-
-                sendType:
-                  'previous_message_error',
-
-                message:
-                  'Receiver ID is required'
+                sendType: 'previous_message_error',
+                message: 'Receiver ID is required'
               })
 
               return
@@ -1658,59 +1576,33 @@ wss.on(
             return
           }
 
-          if (
-            data.sendType ===
-            'group_create'
-          ) {
-            const senderId =
-              authenticatedUserId
+          if (data.sendType === 'group_create') {
+            const senderId = authenticatedUserId
 
-            const groupName =
-              String(
-                data.groupName ||
-                ''
-              ).trim()
+            const groupName = String(data.groupName || '').trim()
 
-            const masterId =
-              normalizeId(
-                data.masterId
-              )
+            const masterId = normalizeId(data.masterId)
 
-            const masterCompanyId =
-              normalizeId(
-                data.masterCompanyId
-              )
+            const masterCompanyId = normalizeId(data.masterCompanyId)
 
-            const selectedUsers =
-              normalizeIds(
-                data.userSelected
-              )
+            const selectedUsers = normalizeIds(data.userSelected)
 
             if (!groupName) {
               sendToClient(ws, {
                 type: 'error',
-
-                sendType:
-                  'group_create_error',
-
-                message:
-                  'Group name is required'
+                sendType: 'group_create_error',
+                message: 'Group name is required'
               })
 
               return
             }
 
-            if (
-              !selectedUsers.length
-            ) {
+            if (!selectedUsers.length) {
+
               sendToClient(ws, {
                 type: 'error',
-
-                sendType:
-                  'group_create_error',
-
-                message:
-                  'At least one user is required'
+                sendType: 'group_create_error',
+                message: 'At least one user is required'
               })
 
               return
@@ -1896,100 +1788,35 @@ wss.on(
             return
           }
 
-          if (
-            data.sendType ===
-            'message'
-          ) {
-            const senderId =
-              authenticatedUserId
+          if (data.sendType === 'message') {
 
-            const type =
-              Number(data.type) ===
-                1
-                ? 1
-                : 0
-
-            const receiverId =
-              normalizeId(
-                data.receiver_id ||
-                data.reciever_id
-              )
-
-            const content =
-              String(
-                data.content || ''
-              )
-
-            const imageUrl =
-              data.image_url ||
-              null
+            const senderId = authenticatedUserId
+            const type = Number(data.type) === 1 ? 1 : 0
+            const receiverId = normalizeId(data.receiver_id || data.reciever_id)
+            const content = String(data.content || '')
+            const imageUrl = data.image_url || null
 
             if (!receiverId) {
+
               sendToClient(ws, {
                 type: 'error',
-
-                sendType:
-                  'message_error',
-
-                message:
-                  'Receiver ID is required'
+                sendType: 'message_error',
+                message: 'Receiver ID is required'
               })
 
               return
             }
 
-            const mysqlSentTime =
-              normalizeMySQLDateTime(
-                data.sent_time
-              )
+            const mysqlSentTime = normalizeMySQLDateTime(data.sent_time)
 
-            const responseSentTime =
-              toISODateTime(
-                mysqlSentTime
-              )
-
-            console.log(
-              '========================================'
-            )
-
-            console.log(
-              '[MESSAGE] sender:',
-              senderId
-            )
-
-            console.log(
-              '[MESSAGE] receiver:',
-              receiverId
-            )
-
-            console.log(
-              '[MESSAGE] type:',
-              type
-            )
-
-            console.log(
-              '[MESSAGE] Client sent_time:',
-              data.sent_time
-            )
-
-            console.log(
-              '[MESSAGE] MySQL sent_time:',
-              mysqlSentTime
-            )
-
-            console.log(
-              '[MESSAGE] Response sent_time:',
-              responseSentTime
-            )
-
-            console.log(
-              '========================================'
-            )
+            const responseSentTime = toISODateTime(mysqlSentTime)
 
             if (type === 1) {
 
               const memberQuery = `
-  SELECT 1
+  SELECT 
+    1,
+    g.group_name
   FROM groups g
   LEFT JOIN user_group ug
     ON g.group_id = ug.group_id
@@ -2011,10 +1838,7 @@ wss.on(
                   senderId, // g.created_by
                   senderId  // ug.user_id
                 ],
-                (
-                  memberError,
-                  members
-                ) => {
+                (memberError, members) => {
 
                   console.log(
                     "Group sender permission:",
@@ -2037,6 +1861,8 @@ wss.on(
 
                     return
                   }
+
+                  const groupName = members[0].group_name || null
 
                   const query = `
       INSERT INTO user_message
@@ -2068,141 +1894,91 @@ wss.on(
                     0
                   ]
 
-                  console.log(
-                    '[GROUP INSERT]',
-                    values
-                  )
+                  db.query(query, values, (err, result) => {
 
-                  db.query(
-                    query,
-                    values,
-                    (
-                      err,
-                      result
-                    ) => {
+                    if (err) {
 
-                      if (err) {
+                      console.error('Group message insert error:', err)
 
-                        console.error(
-                          'Group message insert error:',
-                          err
-                        )
-
-                        sendToClient(
-                          ws,
-                          {
-                            type: 'error',
-                            sendType: 'message_error',
-                            message:
-                              err.sqlMessage ||
-                              'Failed to send group message'
-                          }
-                        )
-
-                        return
-                      }
-
-                      getUserName(
-                        senderId,
-                        sender => {
-
-                          const messageData = {
-                            id: result.insertId,
-
-                            type: 1,
-
-                            sendType: 'new_message',
-
-                            sender_id: senderId,
-
-                            receiver_id: receiverId,
-
-                            reciever_id: receiverId,
-
-                            group_id: receiverId,
-
-                            sender_name:
-                              sender?.name ||
-                              'Unknown',
-
-                            receiver_name: null,
-
-                            reciever_name: null,
-
-                            content,
-
-                            image_url:
-                              imageUrl || null,
-
-                            sent_time:
-                              responseSentTime,
-
-                            sender: senderId
-                          }
-
-                          wss.clients.forEach(
-                            client => {
-
-                              if (
-                                !isSocketAuthenticated(
-                                  client
-                                )
-                              ) {
-                                return
-                              }
-
-                              const clientUserId =
-                                normalizeId(
-                                  client.userId
-                                )
-
-                              // Always send the message
-                              // back to the sender
-                              if (
-                                clientUserId ===
-                                senderId
-                              ) {
-
-                                sendToClient(
-                                  client,
-                                  messageData
-                                )
-
-                                return
-                              }
-
-                              // Check whether receiver is
-                              // group creator OR active member
-                              db.query(
-                                memberQuery,
-                                [
-                                  clientUserId,
-                                  receiverId,
-                                  clientUserId,
-                                  clientUserId
-                                ],
-                                (
-                                  memberError,
-                                  members
-                                ) => {
-
-                                  if (
-                                    !memberError &&
-                                    members.length
-                                  ) {
-
-                                    sendToClient(
-                                      client,
-                                      messageData
-                                    )
-                                  }
-                                }
-                              )
-                            }
-                          )
+                      sendToClient(ws,
+                        {
+                          type: 'error',
+                          sendType: 'message_error',
+                          message: err.sqlMessage || 'Failed to send group message'
                         }
                       )
+
+                      return
                     }
+
+                    getUserName(senderId, sender => {
+
+                      const messageData = {
+                        id: result.insertId,
+                        type: 1,
+                        sendType: 'new_message',
+                        sender_id: senderId,
+                        receiver_id: receiverId,
+                        reciever_id: receiverId,
+                        group_id: receiverId,
+                        group_name: groupName,
+                        sender_name: sender?.name || 'Unknown',
+                        receiver_name: null,
+                        reciever_name: null,
+                        content,
+                        image_url: imageUrl || null,
+                        sent_time: responseSentTime,
+                        sender: senderId
+                      }
+
+                      wss.clients.forEach(client => {
+
+                        if (!isSocketAuthenticated(client)) {
+
+                          return
+                        }
+
+                        const clientUserId = normalizeId(client.userId)
+
+                        if (clientUserId === senderId) {
+
+                          sendToClient(client, messageData)
+
+                          return
+                        }
+
+                        // Check whether receiver is
+                        // group creator OR active member
+                        db.query(
+                          memberQuery,
+                          [
+                            clientUserId,
+                            receiverId,
+                            clientUserId,
+                            clientUserId
+                          ],
+                          (
+                            memberError,
+                            members
+                          ) => {
+
+                            if (
+                              !memberError &&
+                              members.length
+                            ) {
+
+                              sendToClient(
+                                client,
+                                messageData
+                              )
+                            }
+                          }
+                        )
+                      }
+                      )
+                    }
+                    )
+                  }
                   )
                 }
               )
@@ -2337,49 +2113,20 @@ wss.on(
                       receiver => {
                         const messageData =
                         {
-                          id:
-                            result.insertId,
-
+                          id: result.insertId,
                           type: 0,
-
-                          sendType:
-                            'new_message',
-
-                          sender_id:
-                            senderId,
-
-                          receiver_id:
-                            receiverId,
-
-                          reciever_id:
-                            receiverId,
-
-                          group_id:
-                            0,
-
-                          sender_name:
-                            sender?.name ||
-                            'Unknown',
-
-                          receiver_name:
-                            receiver?.name ||
-                            'Unknown',
-
-                          reciever_name:
-                            receiver?.name ||
-                            'Unknown',
-
+                          sendType: 'new_message',
+                          sender_id: senderId,
+                          receiver_id: receiverId,
+                          reciever_id: receiverId,
+                          group_id: 0,
+                          sender_name: sender?.name || 'Unknown',
+                          receiver_name: receiver?.name || 'Unknown',
+                          reciever_name: receiver?.name || 'Unknown',
                           content,
-
-                          image_url:
-                            imageUrl ||
-                            null,
-
-                          sent_time:
-                            responseSentTime,
-
-                          sender:
-                            senderId
+                          image_url: imageUrl || null,
+                          sent_time: responseSentTime,
+                          sender: senderId
                         }
 
                         sendToUser(
